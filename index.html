@@ -144,8 +144,8 @@ h1.title em { color: var(--accent); font-style: italic; font-weight: 400; }
 .occasions { display: grid; grid-template-columns: repeat(4, 1fr); gap: 7px; }
 @media (max-width: 560px) { .occasions { grid-template-columns: repeat(3, 1fr); } }
 .occ {
-  padding: 12px 6px 10px; border: 1px solid var(--line); border-radius: 11px;
-  background: var(--surface-2); text-align: center;
+  min-height: 46px; padding: 12px 8px; border: 1px solid var(--line); border-radius: 11px;
+  background: var(--surface-2); display: grid; place-items: center;
   transition: transform .15s, border-color .15s, background .15s;
 }
 .occ:hover { transform: translateY(-2px); border-color: var(--line-2); }
@@ -154,9 +154,7 @@ h1.title em { color: var(--accent); font-style: italic; font-weight: 400; }
   background: color-mix(in oklab, var(--accent) 8%, var(--surface));
   box-shadow: 0 0 0 3px color-mix(in oklab, var(--accent) 14%, transparent);
 }
-.occ .g { font-family: var(--font-display); font-size: 22px; line-height: 1;
-  display: block; height: 26px; margin-bottom: 5px; color: var(--accent); }
-.occ .l { font-size: 11.5px; font-weight: 500; display: block; }
+.occ .l { font-family: var(--font-display); font-size: 15px; font-weight: 400; color: var(--ink); }
 
 /* fields */
 .field { margin-top: 14px; }
@@ -389,10 +387,23 @@ label.lbl {
   font-family: var(--rec-font, var(--font-display)); font-size: clamp(21px, 4.4vw, 31px);
   margin: 0 0 22px; opacity: 0; animation: rise 1s ease 1.1s forwards;
 }
-.reveal-to::before, .reveal-to::after {
-  content: "❦"; margin: 0 12px; color: var(--rec-accent);
-  font-size: .7em; vertical-align: middle; font-family: var(--font-display);
+/* A drawn ornament (a small diamond flanked by hairlines) replaces the old
+   emoji dingbat. Each card style restyles or hides it. */
+.reveal-orn {
+  display: flex; align-items: center; justify-content: center; gap: 12px;
+  margin: 0 auto 20px; opacity: 0; animation: rise 1s ease 1s forwards;
 }
+.reveal-orn i { display: block; width: 44px; height: 1px; background: var(--rec-accent); opacity: .55; }
+.reveal-orn b { display: block; width: 6px; height: 6px; transform: rotate(45deg);
+  background: var(--rec-accent); }
+/* Monogram: the recipient's initial, drawn, used by some styles. */
+.reveal-mono {
+  width: 74px; height: 74px; margin: 0 auto 20px; border-radius: 50%;
+  border: 1px solid var(--rec-accent); display: grid; place-items: center;
+  font-family: var(--rec-font, var(--font-display)); font-size: 34px;
+  color: var(--rec-accent); opacity: 0; animation: rise 1s ease .7s forwards;
+}
+.reveal-mono span { line-height: 1; }
 .reveal-msg {
   font-family: var(--rec-font, var(--font-display));
   font-size: clamp(20px, 3.4vw, 28px); line-height: 1.75;
@@ -410,6 +421,63 @@ label.lbl {
 }
 .reveal-sig-name { font-family: var(--rec-font, var(--font-display)); font-size: 20px; }
 @keyframes rise { from { opacity: 0; transform: translateY(16px); } to { opacity: 1; transform: none; } }
+
+/* =========================================================================
+   Card styles — distinct reveal treatments, selectable per card. The default
+   (classic) needs no attribute. Each hides the ornaments it does not use.
+   ========================================================================= */
+
+/* Classic: centered editorial, drawn diamond ornament, monogram hidden. */
+.reveal[data-style="classic"] .reveal-mono { display: none; }
+
+/* Minimal: gallery-airy. No ornament, a hairline Latin eyebrow, a large light
+   message, everything quiet. */
+.reveal[data-style="minimal"] .reveal-orn,
+.reveal[data-style="minimal"] .reveal-mono { display: none; }
+.reveal[data-style="minimal"] .reveal-eyebrow { letter-spacing: .42em; opacity: .7; }
+.reveal[data-style="minimal"] .reveal-to { font-weight: 400; font-style: normal; margin-bottom: 30px; }
+.reveal[data-style="minimal"] .reveal-msg { font-size: clamp(22px, 3.8vw, 30px); font-weight: 400; line-height: 1.9; }
+.reveal[data-style="minimal"] .reveal-sig-line { display: none; }
+
+/* Editorial: right-aligned, a heavy accent rule down the start edge, the name
+   large as the anchor, the message in a narrower measure. */
+.reveal[data-style="editorial"] { align-items: stretch; }
+.reveal[data-style="editorial"] .reveal-inner { text-align: start; max-width: 620px; }
+.reveal[data-style="editorial"] .reveal-mono { display: none; }
+.reveal[data-style="editorial"] .reveal-orn { justify-content: flex-start; margin-inline-start: 2px; }
+.reveal[data-style="editorial"] .reveal-orn i { width: 30px; }
+.reveal[data-style="editorial"] .reveal-eyebrow { margin-inline-start: 2px; }
+.reveal[data-style="editorial"] .reveal-to {
+  font-size: clamp(30px, 8vw, 52px); line-height: 1.05; margin-bottom: 26px;
+  padding-inline-start: 16px; border-inline-start: 3px solid var(--rec-accent);
+}
+.reveal[data-style="editorial"] .reveal-msg { max-width: 46ch; margin-inline: 0; }
+.reveal[data-style="editorial"] .reveal-sig { align-items: flex-start; }
+
+/* Monogram: a drawn ring holds the recipient's initial; formal and centered
+   with a hairline frame around the whole message. */
+.reveal[data-style="monogram"] .reveal-orn { display: none; }
+.reveal[data-style="monogram"] .reveal-inner {
+  border: 1px solid color-mix(in oklab, var(--rec-accent) 45%, transparent);
+  border-radius: 4px; padding: 40px 30px 34px; max-width: 500px;
+}
+.reveal[data-style="monogram"] .reveal-eyebrow { margin-top: 4px; }
+.reveal[data-style="monogram"] .reveal-msg { font-size: clamp(19px, 3.2vw, 26px); }
+
+/* Aurora: a soft radial glow of the accent behind clean centered type — the
+   modern social-story look. */
+.reveal[data-style="aurora"] { background:
+  radial-gradient(60% 50% at 50% 34%, color-mix(in oklab, var(--rec-accent) 34%, transparent), transparent 70%),
+  radial-gradient(70% 60% at 50% 88%, color-mix(in oklab, var(--rec-accent) 16%, transparent), transparent 72%); }
+.reveal[data-style="aurora"] .reveal-mono {
+  border: 0; background: color-mix(in oklab, var(--rec-accent) 22%, transparent);
+  color: var(--rec-ink); backdrop-filter: blur(4px);
+}
+.reveal[data-style="aurora"] .reveal-orn { display: none; }
+.reveal[data-style="aurora"] .reveal-to { font-style: normal; }
+.reveal[data-style="aurora"] .reveal-msg { font-size: clamp(21px, 3.6vw, 29px); }
+.reveal[data-style="aurora"] .reveal-sig-line { display: none; }
+
 .rec-brand {
   position: absolute; bottom: 18px; left: 0; right: 0; text-align: center; z-index: 5;
   font-family: var(--font-eyebrow); font-size: 10px; letter-spacing: .3em;
@@ -894,30 +962,32 @@ const CODEC = (() => {
   const inflate = bytes => pump(new DecompressionStream('deflate-raw'), bytes);
 
   // Header, then 2-byte-length-prefixed utf8 fields. Format 1 is
-  // [1][occ][palette][anim][font]; format 2 appends one sound byte
-  // (255 = follow the occasion, 254 = off, else an index into SOUNDS).
-  // Older format-1 links keep decoding — the sound just follows the occasion.
+  // [1][occ][palette][anim][font]; format 2 appends a sound byte; format 3
+  // appends a style byte (255 = default/classic, else an index into STYLES).
+  // Older links keep decoding — missing fields fall back to their defaults.
   function pack(card) {
     const fields = [card.to, card.from, card.shop, card.message].map(v => enc.encode(v || ''));
-    const out = new Uint8Array(6 + fields.reduce((n,f) => n + 2 + f.length, 0));
+    const out = new Uint8Array(7 + fields.reduce((n,f) => n + 2 + f.length, 0));
     let o = 0;
-    out[o++] = 2;
+    out[o++] = 3;
     out[o++] = Math.max(0, OCCASIONS.findIndex(x => x.id === card.occasionId));
     out[o++] = card.paletteId ? Math.max(0, PALETTES.findIndex(x => x.id === card.paletteId)) : 255;
     out[o++] = card.animId    ? Math.max(0, ANIMATIONS.findIndex(x => x.id === card.animId))  : 255;
     out[o++] = card.fontId    ? Math.max(0, FONTS.findIndex(x => x.id === card.fontId))       : 255;
     out[o++] = card.soundId === 'off' ? 254 : card.soundId ? Math.max(0, SOUNDS.findIndex(x => x.id === card.soundId)) : 255;
+    out[o++] = card.styleId   ? Math.max(0, STYLES.findIndex(x => x.id === card.styleId))     : 255;
     for (const f of fields) { out[o++] = f.length >> 8; out[o++] = f.length & 255; out.set(f, o); o += f.length; }
     return out;
   }
   function unpack(bytes) {
     let o = 0;
     const fmt = bytes[o++];
-    if (fmt !== 1 && fmt !== 2) return null;
+    if (fmt < 1 || fmt > 3) return null;
     const occ = OCCASIONS[bytes[o++]] || OCCASIONS[0];
     const pi = bytes[o++], ai = bytes[o++], fi = bytes[o++];
-    let sid = null;
+    let sid = null, tid = null;
     if (fmt >= 2) { const s = bytes[o++]; sid = s === 255 ? null : s === 254 ? 'off' : (SOUNDS[s] || {}).id || null; }
+    if (fmt >= 3) { const t = bytes[o++]; tid = t === 255 ? null : (STYLES[t] || {}).id || null; }
     const read = () => {
       const len = (bytes[o++] << 8) | bytes[o++];
       const s = dec.decode(bytes.subarray(o, o + len)); o += len; return s;
@@ -928,12 +998,13 @@ const CODEC = (() => {
       animId:    ai === 255 ? null : (ANIMATIONS[ai] || {}).id || null,
       fontId:    fi === 255 ? null : (FONTS[fi] || {}).id || null,
       soundId:   sid,
+      styleId:   tid,
       to: read(), from: read(), shop: read(), message: read(),
     };
   }
 
   const legacyJson = card => ({ o: card.occasionId, t: card.to, m: card.message,
-    f: card.from, s: card.shop, p: card.paletteId, a: card.animId, ft: card.fontId, sd: card.soundId });
+    f: card.from, s: card.shop, p: card.paletteId, a: card.animId, ft: card.fontId, sd: card.soundId, st: card.styleId });
 
   // The payload lives in the QUERY STRING, not the fragment. Plenty of scanner
   // apps and messengers cut a URL at '#' or drop what follows it, which opened
@@ -947,7 +1018,8 @@ const CODEC = (() => {
   }
 
   const fromLegacyJson = j => ({ occasionId: j.o, to: j.t, message: j.m, from: j.f,
-    shop: j.s, paletteId: j.p || null, animId: j.a || null, fontId: j.ft || null, soundId: j.sd || null });
+    shop: j.s, paletteId: j.p || null, animId: j.a || null, fontId: j.ft || null,
+    soundId: j.sd || null, styleId: j.st || null });
 
   // Reads whichever form the link arrived in: the query parameters used now,
   // and the '#d/' and '#c/' fragments used by cards already printed.
@@ -1014,6 +1086,15 @@ const SOUNDS = [
 ];
 const soundOf = card => card.soundId === 'off' ? 'off'
   : (card.soundId || occOf(card.occasionId).sound || 'chime');
+// Reveal styles — distinct layouts for the opened card. Default is classic.
+const STYLES = [
+  { id:'classic',   name:'كلاسيك'   },
+  { id:'minimal',   name:'بسيط'     },
+  { id:'editorial', name:'مجلة'     },
+  { id:'monogram',  name:'مونوغرام' },
+  { id:'aurora',    name:'توهّج'    },
+];
+const styleOf = card => (card.styleId && STYLES.some(s => s.id === card.styleId)) ? card.styleId : 'classic';
 const OCCASIONS = [
   { id:'birthday',  label:'عيد ميلاد',  sub:'HBD',      glyph:'⚘', palette:'plum',     anim:'balloons', sound:'musicbox', eyebrow:'كل عام وأنت أسعد' },
   { id:'wedding',   label:'زواج مبارك', sub:'MABROUK',  glyph:'❦', palette:'wine',     anim:'petals',   sound:'harp',     eyebrow:'ألف مبروك' },
@@ -1061,7 +1142,7 @@ const printMm = modules => Math.ceil((modules + 8) * 0.5 / 5) * 5;
 const state = {
   customerMode: false,
   form: { occasionId:'birthday', to:'', from:'', shop:'زهور المدينة', message:'',
-          paletteId:null, animId:null, fontId:'naskh', soundId:null },
+          paletteId:null, animId:null, fontId:'naskh', soundId:null, styleId:null },
 };
 
 // Play one short synthesised phrase. Called on the envelope's open gesture, so
@@ -1150,7 +1231,7 @@ function renderComposer() {
             <div class="occasions" id="occGrid">
               ${OCCASIONS.map(o => `
                 <button class="occ ${o.id === f.occasionId ? 'on' : ''}" data-occ="${o.id}">
-                  <span class="g">${o.glyph}</span><span class="l">${o.label}</span>
+                  <span class="l">${o.label}</span>
                 </button>`).join('')}
             </div>
           </div>
@@ -1176,14 +1257,19 @@ function renderComposer() {
 
           <div class="panel">
             <div class="panel-title">التصميم</div>
-            <label class="lbl">لون الكرت</label>
+            <label class="lbl">نمط الكرت</label>
+            <div class="opt-row" id="styleRow">
+              ${STYLES.map(s => `
+                <button class="chip ${(f.styleId || 'classic') === s.id ? 'on' : ''}" data-style="${s.id}">${s.name}</button>`).join('')}
+            </div>
+            <div class="field"><label class="lbl">لون الكرت</label>
             <div class="opt-row" id="palRow">
               <button class="chip ${!f.paletteId ? 'on' : ''}" data-pal="">تلقائي</button>
               ${PALETTES.map(p => `
                 <button class="chip ${f.paletteId === p.id ? 'on' : ''}" data-pal="${p.id}">
                   <span class="sw" style="background:${p.accent}"></span>${p.name}
                 </button>`).join('')}
-            </div>
+            </div></div>
             <div class="field"><label class="lbl">الحركة</label>
               <div class="opt-row" id="animRow">
                 <button class="chip ${!f.animId ? 'on' : ''}" data-anim="">تلقائي</button>
@@ -1276,6 +1362,15 @@ function renderComposer() {
   pick('animRow', 'data-anim', 'animId');
   pick('fontRow', 'data-font', 'fontId');
   pick('soundRow', 'data-sound', 'soundId');
+  // The style row always has one selection (classic by default), so it toggles
+  // on the resolved value rather than the raw (possibly null) form field.
+  const styleRow = document.getElementById('styleRow');
+  if (styleRow) styleRow.onclick = e => {
+    const b = e.target.closest('[data-style]'); if (!b) return;
+    f.styleId = b.dataset.style;
+    styleRow.querySelectorAll('.chip').forEach(el => el.classList.toggle('on', el.dataset.style === f.styleId));
+    refreshPreview();
+  };
   const soundTest = document.getElementById('soundTest');
   if (soundTest) soundTest.onclick = e => { e.stopPropagation(); playCardSound(soundOf(state.form)); };
 
@@ -1332,7 +1427,7 @@ function refreshPreview() {
     from: f.from || '',
     shop: f.shop || 'باقة',
     message: f.message || 'كل عام وأنت بخير، وكل لحظة حلوة تكون من نصيبك.',
-    paletteId: f.paletteId, animId: f.animId, fontId: f.fontId, soundId: f.soundId,
+    paletteId: f.paletteId, animId: f.animId, fontId: f.fontId, soundId: f.soundId, styleId: f.styleId,
   }, true);
 }
 
@@ -1346,7 +1441,7 @@ async function makeCard() {
     to: f.to.trim(), from: f.from.trim(),
     shop: f.shop.trim() || 'باقة',
     message: f.message.trim(),
-    paletteId: f.paletteId, animId: f.animId, fontId: f.fontId, soundId: f.soundId,
+    paletteId: f.paletteId, animId: f.animId, fontId: f.fontId, soundId: f.soundId, styleId: f.styleId,
   };
   card.url = await CODEC.encodeCard(card);
   if (!state.customerMode) {
@@ -1448,7 +1543,7 @@ function tplCard(card, url) {
   const s = symbol(url, x, y, px);
   return svgOpen(w, h) + `
     <defs><pattern id="p" width="60" height="60" patternUnits="userSpaceOnUse">
-      <text x="30" y="50" text-anchor="middle" font-size="52" fill="#742036" opacity="0.03">${esc(o.glyph)}</text>
+      <rect x="26" y="26" width="8" height="8" fill="#742036" opacity="0.05" transform="rotate(45 30 30)"/>
     </pattern></defs>
     <rect width="${w}" height="${h}" fill="#FBF6EF"/>
     <rect width="${w}" height="${h}" fill="url(#p)"/>
@@ -1459,7 +1554,7 @@ function tplCard(card, url) {
     <text x="${w/2}" y="145" text-anchor="middle" font-family="Reem Kufi, sans-serif" font-size="10" letter-spacing="4" fill="#8B7168">BAAQA · GIFT CARDS</text>
     <text x="${w/2}" y="205" text-anchor="middle" font-family="Reem Kufi, sans-serif" font-size="12" letter-spacing="6" fill="#8B7168">${esc(o.sub)}</text>
     <text x="${w/2}" y="248" text-anchor="middle" font-size="34" font-style="italic" fill="#1F1512" direction="rtl">${esc(o.label)}</text>
-    <text x="${w/2}" y="282" text-anchor="middle" font-size="26" fill="#742036">${esc(o.glyph)}</text>
+    <rect x="${w/2-6}" y="269" width="12" height="12" fill="#742036" transform="rotate(45 ${w/2} 275)"/>
     <rect x="${x-22}" y="${y-22}" width="${px+44}" height="${px+44}" fill="#ffffff" stroke="#742036" stroke-width="1.5"/>
     ${s.svg}
     <text x="${w/2}" y="${y+px+62}" text-anchor="middle" font-size="22" fill="#4A362E" direction="rtl">امسح الرمز لفتح رسالتك</text>
@@ -1481,7 +1576,7 @@ function tplTag(card, url) {
     <circle cx="${w/2}" cy="56" r="13" fill="none" stroke="#742036" stroke-width="2"/>
     <text x="${w/2}" y="130" text-anchor="middle" font-size="30" font-weight="700" fill="#742036" direction="rtl">باقة</text>
     <text x="${w/2}" y="176" text-anchor="middle" font-size="26" font-style="italic" fill="#1F1512" direction="rtl">${esc(o.label)}</text>
-    <text x="${w/2}" y="214" text-anchor="middle" font-size="24" fill="#742036">${esc(o.glyph)}</text>
+    <rect x="${w/2-5}" y="202" width="10" height="10" fill="#742036" transform="rotate(45 ${w/2} 207)"/>
     ${card.to ? `<text x="${w/2}" y="252" text-anchor="middle" font-family="Reem Kufi, sans-serif" font-size="11" letter-spacing="3" fill="#8B7168" direction="rtl">إلى · ${esc(card.to)}</text>` : ''}
     <rect x="${x-18}" y="${y-18}" width="${px+36}" height="${px+36}" fill="#ffffff" stroke="#B08549" stroke-width="1"/>
     ${s.svg}
@@ -1632,8 +1727,16 @@ async function download(filename, data) {
 /* =====================================================================
    Recipient page
    ===================================================================== */
+// First letter of the recipient's name, drawn as a monogram in place of the
+// old emoji seal. Falls back to the shop initial, then the brand's ب.
+function initialOf(card) {
+  const src = (card.to || card.shop || 'باقة').trim();
+  return esc(Array.from(src)[0] || 'ب');
+}
 function recipientBody(card) {
   const o = occOf(card.occasionId);
+  const mono = initialOf(card);
+  const style = styleOf(card);
   return `
     <canvas class="rec-canvas" id="cv"></canvas>
     <div class="rec-vignette"></div>
@@ -1641,12 +1744,14 @@ function recipientBody(card) {
       <div class="envelope" id="env" role="button" tabindex="0" aria-label="افتح الكرت">
         <div class="env-body"></div>
         <div class="env-flap"></div>
-        <div class="env-inner"><span class="env-inner-mark">${esc(o.glyph)}</span></div>
-        <div class="env-seal"><div class="env-seal-circle">${esc(o.glyph)}</div></div>
+        <div class="env-inner"><span class="env-inner-mark">${mono}</span></div>
+        <div class="env-seal"><div class="env-seal-circle">${mono}</div></div>
         <div class="env-hint">اضغط لفتح الكرت</div>
       </div>
-      <div class="reveal" id="rev"><div class="reveal-inner">
+      <div class="reveal" id="rev" data-style="${style}"><div class="reveal-inner">
+        <div class="reveal-mono"><span>${mono}</span></div>
         <div class="reveal-eyebrow">${esc(o.eyebrow)}</div>
+        <div class="reveal-orn"><i></i><b></b><i></i></div>
         ${card.to ? `<div class="reveal-to">${esc(card.to)}</div>` : ''}
         <div class="reveal-msg">${esc(card.message)}</div>
         ${card.from ? `<div class="reveal-sig">
