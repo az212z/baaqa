@@ -431,10 +431,31 @@ label.lbl {
   background: radial-gradient(ellipse at 50% 50%, transparent 42%, rgba(0,0,0,.34) 92%);
 }
 
+/* Full-screen symbol for scanning off a display */
+.scanview {
+  position: fixed; inset: 0; z-index: 300; background: #ffffff;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  padding: 16px; gap: 14px;
+}
+.scanview-inner { display: flex; flex-direction: column; align-items: center; gap: 12px; }
+.scanview svg {
+  display: block; width: min(86vw, 86vh, 620px); height: auto;
+  image-rendering: pixelated;
+}
+.scanview-note {
+  font-family: "Tajawal", system-ui, sans-serif; font-size: 13px;
+  color: #4A362E; text-align: center;
+}
+.scanview-close {
+  position: fixed; top: 14px; inset-inline-end: 14px;
+  padding: 9px 16px; border-radius: 999px; font-size: 13px;
+  background: #1F1512; color: #F6EFE7;
+}
+
 .toast {
   position: fixed; top: 18px; left: 50%; transform: translateX(-50%);
   background: var(--ink); color: var(--bg); padding: 10px 20px;
-  border-radius: 999px; font-size: 13px; z-index: 200; opacity: 0;
+  border-radius: 999px; font-size: 13px; z-index: 400; opacity: 0;
   transition: opacity .2s; box-shadow: var(--shadow-md); pointer-events: none;
 }
 .toast.on { opacity: 1; }
@@ -893,28 +914,40 @@ const CODEC = (() => {
     };
   }
 
+  const legacyJson = card => ({ o: card.occasionId, t: card.to, m: card.message,
+    f: card.from, s: card.shop, p: card.paletteId, a: card.animId, ft: card.fontId });
+
+  // The payload lives in the QUERY STRING, not the fragment. Plenty of scanner
+  // apps and messengers cut a URL at '#' or drop what follows it, which opened
+  // the site with no card. A query parameter survives every one of them.
   async function encodeCard(card) {
     const base = location.origin + location.pathname;
     if (supported) {
-      try { return base + '#d/' + toB64(await deflate(pack(card))); } catch (e) {}
+      try { return base + '?c=' + toB64(await deflate(pack(card))); } catch (e) {}
     }
-    // Fallback for browsers without CompressionStream: uncompressed JSON.
-    const legacy = { o: card.occasionId, t: card.to, m: card.message, f: card.from, s: card.shop,
-                     p: card.paletteId, a: card.animId, ft: card.fontId };
-    return base + '#c/' + toB64(enc.encode(JSON.stringify(legacy)));
+    return base + '?l=' + toB64(enc.encode(JSON.stringify(legacyJson(card))));
   }
-  async function decodeHash(hash) {
+
+  const fromLegacyJson = j => ({ occasionId: j.o, to: j.t, message: j.m, from: j.f,
+    shop: j.s, paletteId: j.p || null, animId: j.a || null, fontId: j.ft || null });
+
+  // Reads whichever form the link arrived in: the query parameters used now,
+  // and the '#d/' and '#c/' fragments used by cards already printed.
+  async function readCard(search, hash) {
     try {
+      const q = new URLSearchParams(search || '');
+      if (q.get('c')) return unpack(await inflate(fromB64(q.get('c'))));
+      if (q.get('l')) return fromLegacyJson(JSON.parse(dec.decode(fromB64(q.get('l')))));
       if (hash.startsWith('#d/')) return unpack(await inflate(fromB64(hash.slice(3))));
-      if (hash.startsWith('#c/')) {
-        const j = JSON.parse(dec.decode(fromB64(hash.slice(3))));
-        return { occasionId: j.o, to: j.t, message: j.m, from: j.f, shop: j.s,
-                 paletteId: j.p || null, animId: j.a || null, fontId: j.ft || null };
-      }
+      if (hash.startsWith('#c/')) return fromLegacyJson(JSON.parse(dec.decode(fromB64(hash.slice(3)))));
     } catch (e) {}
     return null;
   }
-  return { encodeCard, decodeHash, compressionSupported: supported };
+  const carriesCard = (search, hash) => {
+    const q = new URLSearchParams(search || '');
+    return !!(q.get('c') || q.get('l')) || hash.startsWith('#d/') || hash.startsWith('#c/');
+  };
+  return { encodeCard, readCard, carriesCard, compressionSupported: supported };
 })();
 
 /* =====================================================================
@@ -1252,6 +1285,7 @@ async function showResult(card) {
         ${r.word} · ${size}×${size} · لا تطبعه بعرض أقل من ${mm} مم</div>
       <div class="row" style="margin-top:14px">
         <button class="btn btn-secondary" id="openBtn">افتح الكرت</button>
+        <button class="btn btn-secondary" id="scanBtn">تكبير للمسح</button>
         <button class="btn btn-primary" id="expBtn">صفحة الطباعة ↗</button>
       </div>
     </div>`;
@@ -1259,11 +1293,34 @@ async function showResult(card) {
     try { await navigator.clipboard.writeText(url); toast('نُسخ الرابط'); }
     catch { toast('انسخ الرابط من الحقل'); }
   };
-  document.getElementById('openBtn').onclick = () => { location.hash = url.split('#')[1] || ''; };
+  document.getElementById('openBtn').onclick = () => { location.href = url; };
+  document.getElementById('scanBtn').onclick = () => showScanView(url, size);
   document.getElementById('expBtn').onclick = () => {
     if (!card.id || state.customerMode) { EXPORT_CARD = card; location.hash = 'x'; }
     else location.hash = 'e/' + card.id;
   };
+}
+
+// Scanning a screen is much harder for a camera than scanning paper: the code
+// is small, the backlight flickers, and glare washes out the contrast. This
+// fills the display with the symbol on pure white and nothing else.
+function showScanView(url, modules) {
+  document.querySelectorAll('.scanview').forEach(n => n.remove());
+  const v = document.createElement('div');
+  v.className = 'scanview';
+  v.innerHTML = `
+    <div class="scanview-inner">
+      ${QR.toSVG(url, { ecl:'M', scale:10, margin:4 })}
+      <div class="scanview-note">
+        وجّه كاميرا جوال آخر من مسافة 20–30 سم · ${modules}×${modules}
+      </div>
+    </div>
+    <button class="scanview-close" aria-label="إغلاق">إغلاق ✕</button>`;
+  document.body.appendChild(v);
+  const close = () => { v.remove(); document.removeEventListener('keydown', onKey); };
+  const onKey = e => { if (e.key === 'Escape') close(); };
+  v.querySelector('.scanview-close').onclick = close;
+  document.addEventListener('keydown', onKey);
 }
 
 function toggleTheme() {
@@ -1438,7 +1495,7 @@ async function renderExport(card) {
     document.querySelectorAll('.tpl').forEach(el => el.classList.toggle('on', el.dataset.tpl === cur));
     draw();
   };
-  document.getElementById('back').onclick = () => { location.hash = ''; };
+  document.getElementById('back').onclick = () => { location.href = HOME(); };
   document.getElementById('pPrint').onclick = () => window.print();
   document.getElementById('pSvg').onclick = () =>
     download(`baaqa-${cur}-${card.id || 'card'}.svg`, tgt.querySelector('svg').outerHTML);
@@ -1538,7 +1595,7 @@ function renderRecipient(card) {
   wrap.innerHTML = `<button class="rec-back" id="recBack">‹ رجوع</button>` + recipientBody(card);
   document.body.appendChild(wrap);
   document.body.style.background = p.bg;
-  wrap.querySelector('#recBack').onclick = () => { location.hash = ''; };
+  wrap.querySelector('#recBack').onclick = () => { location.href = HOME(); };
   wireRecipient(wrap, animOf(card), p.accent, false);
 }
 
@@ -1734,19 +1791,21 @@ const MOTION_SRC = () => [shade, Balloon, Petal, Heart, Sparkle, Cloud, Bloom,
 /* =====================================================================
    Router
    ===================================================================== */
+const HOME = () => location.origin + location.pathname;
+
 async function boot() {
   try {
     const t = localStorage.getItem('baaqa.theme');
     if (t) document.documentElement.setAttribute('data-theme', t);
   } catch {}
 
-  document.querySelectorAll('.recipient').forEach(n => n.remove());
+  document.querySelectorAll('.recipient, .scanview').forEach(n => n.remove());
   document.body.style.background = '';
 
   const h = location.hash;
 
-  if (h.startsWith('#d/') || h.startsWith('#c/')) {
-    const card = await CODEC.decodeHash(h);
+  if (CODEC.carriesCard(location.search, h)) {
+    const card = await CODEC.readCard(location.search, h);
     if (card) { renderRecipient(card); return; }
     toast('رابط الكرت غير صالح');
   }
