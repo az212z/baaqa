@@ -893,24 +893,31 @@ const CODEC = (() => {
   const deflate = bytes => pump(new CompressionStream('deflate-raw'), bytes);
   const inflate = bytes => pump(new DecompressionStream('deflate-raw'), bytes);
 
-  // [1=fmt][occ][palette][anim][font] then 2-byte-length-prefixed utf8 fields
+  // Header, then 2-byte-length-prefixed utf8 fields. Format 1 is
+  // [1][occ][palette][anim][font]; format 2 appends one sound byte
+  // (255 = follow the occasion, 254 = off, else an index into SOUNDS).
+  // Older format-1 links keep decoding — the sound just follows the occasion.
   function pack(card) {
     const fields = [card.to, card.from, card.shop, card.message].map(v => enc.encode(v || ''));
-    const out = new Uint8Array(5 + fields.reduce((n,f) => n + 2 + f.length, 0));
+    const out = new Uint8Array(6 + fields.reduce((n,f) => n + 2 + f.length, 0));
     let o = 0;
-    out[o++] = 1;
+    out[o++] = 2;
     out[o++] = Math.max(0, OCCASIONS.findIndex(x => x.id === card.occasionId));
     out[o++] = card.paletteId ? Math.max(0, PALETTES.findIndex(x => x.id === card.paletteId)) : 255;
     out[o++] = card.animId    ? Math.max(0, ANIMATIONS.findIndex(x => x.id === card.animId))  : 255;
     out[o++] = card.fontId    ? Math.max(0, FONTS.findIndex(x => x.id === card.fontId))       : 255;
+    out[o++] = card.soundId === 'off' ? 254 : card.soundId ? Math.max(0, SOUNDS.findIndex(x => x.id === card.soundId)) : 255;
     for (const f of fields) { out[o++] = f.length >> 8; out[o++] = f.length & 255; out.set(f, o); o += f.length; }
     return out;
   }
   function unpack(bytes) {
     let o = 0;
-    if (bytes[o++] !== 1) return null;
+    const fmt = bytes[o++];
+    if (fmt !== 1 && fmt !== 2) return null;
     const occ = OCCASIONS[bytes[o++]] || OCCASIONS[0];
     const pi = bytes[o++], ai = bytes[o++], fi = bytes[o++];
+    let sid = null;
+    if (fmt >= 2) { const s = bytes[o++]; sid = s === 255 ? null : s === 254 ? 'off' : (SOUNDS[s] || {}).id || null; }
     const read = () => {
       const len = (bytes[o++] << 8) | bytes[o++];
       const s = dec.decode(bytes.subarray(o, o + len)); o += len; return s;
@@ -920,12 +927,13 @@ const CODEC = (() => {
       paletteId: pi === 255 ? null : (PALETTES[pi] || {}).id || null,
       animId:    ai === 255 ? null : (ANIMATIONS[ai] || {}).id || null,
       fontId:    fi === 255 ? null : (FONTS[fi] || {}).id || null,
+      soundId:   sid,
       to: read(), from: read(), shop: read(), message: read(),
     };
   }
 
   const legacyJson = card => ({ o: card.occasionId, t: card.to, m: card.message,
-    f: card.from, s: card.shop, p: card.paletteId, a: card.animId, ft: card.fontId });
+    f: card.from, s: card.shop, p: card.paletteId, a: card.animId, ft: card.fontId, sd: card.soundId });
 
   // The payload lives in the QUERY STRING, not the fragment. Plenty of scanner
   // apps and messengers cut a URL at '#' or drop what follows it, which opened
@@ -939,7 +947,7 @@ const CODEC = (() => {
   }
 
   const fromLegacyJson = j => ({ occasionId: j.o, to: j.t, message: j.m, from: j.f,
-    shop: j.s, paletteId: j.p || null, animId: j.a || null, fontId: j.ft || null });
+    shop: j.s, paletteId: j.p || null, animId: j.a || null, fontId: j.ft || null, soundId: j.sd || null });
 
   // Reads whichever form the link arrived in: the query parameters used now,
   // and the '#d/' and '#c/' fragments used by cards already printed.
@@ -991,23 +999,38 @@ const FONTS = [
   { id:'kufi',  name:'كوفي', css:'"Reem Kufi", sans-serif' },
   { id:'modern',name:'حديث', css:'"Tajawal", sans-serif' },
 ];
+// Short synthesised phrases played when the envelope opens — no audio files,
+// built live with the Web Audio API so they work offline. Each is one gentle
+// pentatonic gesture (always consonant), notes as [freq, startSec, durSec, gain].
+const SOUNDS = [
+  { id:'chime',    name:'أجراس',       type:'triangle',
+    seq:[[523.25,0,1.6,.5],[659.25,.16,1.6,.45],[783.99,.32,1.8,.5],[1046.5,.5,2.2,.55],[783.99,1.0,1.6,.3]] },
+  { id:'musicbox', name:'علبة موسيقى', type:'sine',
+    seq:[[1318.51,0,.9,.4],[1174.66,.14,.9,.38],[1046.5,.28,.9,.4],[880,.5,1.0,.36],[1046.5,.7,1.2,.4],[1318.51,.95,1.6,.42]] },
+  { id:'harp',     name:'قيثارة',       type:'triangle',
+    seq:[[523.25,0,1.4,.4],[659.25,.07,1.4,.4],[783.99,.14,1.5,.42],[880,.21,1.5,.42],[1046.5,.28,1.8,.46],[1318.51,.35,2.0,.48]] },
+  { id:'warm',     name:'دفء',          type:'sine',
+    seq:[[523.25,0,2.6,.4],[659.25,.02,2.6,.36],[783.99,.04,2.8,.34],[1046.5,.5,2.4,.3]] },
+];
+const soundOf = card => card.soundId === 'off' ? 'off'
+  : (card.soundId || occOf(card.occasionId).sound || 'chime');
 const OCCASIONS = [
-  { id:'birthday',  label:'عيد ميلاد',  sub:'HBD',      glyph:'⚘', palette:'plum',     anim:'balloons', eyebrow:'كل عام وأنت أسعد' },
-  { id:'wedding',   label:'زواج مبارك', sub:'MABROUK',  glyph:'❦', palette:'wine',     anim:'petals',   eyebrow:'ألف مبروك' },
-  { id:'love',      label:'أحبك',       sub:'LOVE',     glyph:'♥', palette:'rose',     anim:'hearts',   eyebrow:'من كل قلبي' },
-  { id:'graduation',label:'تخرج',       sub:'GRAD',     glyph:'❈', palette:'midnight', anim:'sparkles', eyebrow:'مبروك النجاح' },
-  { id:'newborn',   label:'مولود جديد', sub:'BABY',     glyph:'❋', palette:'mist',     anim:'clouds',   eyebrow:'مبروك المولود' },
-  { id:'thanks',    label:'شكرًا',       sub:'MERCI',    glyph:'❁', palette:'amber',    anim:'bloom',    eyebrow:'من قلبي' },
-  { id:'mother',    label:'عيد الأم',   sub:'MOM',      glyph:'❀', palette:'rose',     anim:'roses',    eyebrow:'أمي الغالية' },
-  { id:'getwell',   label:'سلامات',     sub:'GET WELL', glyph:'✿', palette:'sage',     anim:'leaves',   eyebrow:'ألف سلامة' },
-  { id:'eid',       label:'العيد',      sub:'EID',      glyph:'☪', palette:'teal',     anim:'stars',    eyebrow:'عيدكم مبارك' },
-  { id:'ramadan',   label:'رمضان',      sub:'RAMADAN',  glyph:'☾', palette:'midnight', anim:'stars',    eyebrow:'رمضان كريم' },
-  { id:'success',   label:'نجاح',       sub:'BRAVO',    glyph:'✦', palette:'amber',    anim:'confetti', eyebrow:'مبروك التميّز' },
-  { id:'promotion', label:'ترقية',      sub:'PROMOTED', glyph:'✧', palette:'midnight', anim:'confetti', eyebrow:'تستاهل كل خير' },
-  { id:'newhome',   label:'بيت جديد',   sub:'NEW HOME', glyph:'⌂', palette:'sage',     anim:'bloom',    eyebrow:'مبارك المنزل' },
-  { id:'sorry',     label:'اعتذار',     sub:'SORRY',    glyph:'❋', palette:'mist',     anim:'petals',   eyebrow:'أعتذر منك' },
-  { id:'welcome',   label:'تهنئة',      sub:'CONGRATS', glyph:'✺', palette:'wine',     anim:'sparkles', eyebrow:'تهانينا' },
-  { id:'farewell',  label:'وداع',       sub:'FAREWELL', glyph:'❧', palette:'teal',     anim:'leaves',   eyebrow:'إلى اللقاء' },
+  { id:'birthday',  label:'عيد ميلاد',  sub:'HBD',      glyph:'⚘', palette:'plum',     anim:'balloons', sound:'musicbox', eyebrow:'كل عام وأنت أسعد' },
+  { id:'wedding',   label:'زواج مبارك', sub:'MABROUK',  glyph:'❦', palette:'wine',     anim:'petals',   sound:'harp',     eyebrow:'ألف مبروك' },
+  { id:'love',      label:'أحبك',       sub:'LOVE',     glyph:'♥', palette:'rose',     anim:'hearts',   sound:'harp',     eyebrow:'من كل قلبي' },
+  { id:'graduation',label:'تخرج',       sub:'GRAD',     glyph:'❈', palette:'midnight', anim:'sparkles', sound:'chime',    eyebrow:'مبروك النجاح' },
+  { id:'newborn',   label:'مولود جديد', sub:'BABY',     glyph:'❋', palette:'mist',     anim:'clouds',   sound:'musicbox', eyebrow:'مبروك المولود' },
+  { id:'thanks',    label:'شكرًا',       sub:'MERCI',    glyph:'❁', palette:'amber',    anim:'bloom',    sound:'warm',     eyebrow:'من قلبي' },
+  { id:'mother',    label:'عيد الأم',   sub:'MOM',      glyph:'❀', palette:'rose',     anim:'roses',    sound:'harp',     eyebrow:'أمي الغالية' },
+  { id:'getwell',   label:'سلامات',     sub:'GET WELL', glyph:'✿', palette:'sage',     anim:'leaves',   sound:'warm',     eyebrow:'ألف سلامة' },
+  { id:'eid',       label:'العيد',      sub:'EID',      glyph:'☪', palette:'teal',     anim:'stars',    sound:'chime',    eyebrow:'عيدكم مبارك' },
+  { id:'ramadan',   label:'رمضان',      sub:'RAMADAN',  glyph:'☾', palette:'midnight', anim:'stars',    sound:'warm',     eyebrow:'رمضان كريم' },
+  { id:'success',   label:'نجاح',       sub:'BRAVO',    glyph:'✦', palette:'amber',    anim:'confetti', sound:'musicbox', eyebrow:'مبروك التميّز' },
+  { id:'promotion', label:'ترقية',      sub:'PROMOTED', glyph:'✧', palette:'midnight', anim:'confetti', sound:'chime',    eyebrow:'تستاهل كل خير' },
+  { id:'newhome',   label:'بيت جديد',   sub:'NEW HOME', glyph:'⌂', palette:'sage',     anim:'bloom',    sound:'warm',     eyebrow:'مبارك المنزل' },
+  { id:'sorry',     label:'اعتذار',     sub:'SORRY',    glyph:'❋', palette:'mist',     anim:'petals',   sound:'warm',     eyebrow:'أعتذر منك' },
+  { id:'welcome',   label:'تهنئة',      sub:'CONGRATS', glyph:'✺', palette:'wine',     anim:'sparkles', sound:'chime',    eyebrow:'تهانينا' },
+  { id:'farewell',  label:'وداع',       sub:'FAREWELL', glyph:'❧', palette:'teal',     anim:'leaves',   sound:'warm',     eyebrow:'إلى اللقاء' },
 ];
 
 const occOf   = id => OCCASIONS.find(o => o.id === id) || OCCASIONS[0];
@@ -1038,8 +1061,55 @@ const printMm = modules => Math.ceil((modules + 8) * 0.5 / 5) * 5;
 const state = {
   customerMode: false,
   form: { occasionId:'birthday', to:'', from:'', shop:'زهور المدينة', message:'',
-          paletteId:null, animId:null, fontId:'naskh' },
+          paletteId:null, animId:null, fontId:'naskh', soundId:null },
 };
+
+// Play one short synthesised phrase. Called on the envelope's open gesture, so
+// the browser's autoplay gate is satisfied. All voices decay on their own; the
+// context closes itself a few seconds later. `id` of 'off'/null plays nothing.
+function playCardSound(id) {
+  if (!id || id === 'off') return;
+  const AC = window.AudioContext || window.webkitAudioContext;
+  if (!AC) return;
+  const conf = SOUNDS.find(s => s.id === id) || SOUNDS[0];
+  let ctx;
+  try { ctx = new AC(); } catch (e) { return; }
+  if (ctx.state === 'suspended') ctx.resume().catch(() => {});
+  const now = ctx.currentTime;
+
+  const master = ctx.createGain();
+  master.gain.value = 0.0001;
+  master.connect(ctx.destination);
+  master.gain.setValueAtTime(0.0001, now);
+  master.gain.exponentialRampToValueAtTime(0.55, now + 0.03);
+
+  const lp = ctx.createBiquadFilter();
+  lp.type = 'lowpass'; lp.frequency.value = 5200;
+  lp.connect(master);
+
+  // a soft echo for sparkle
+  const delay = ctx.createDelay(1.0); delay.delayTime.value = 0.22;
+  const fb = ctx.createGain(); fb.gain.value = 0.24;
+  const wet = ctx.createGain(); wet.gain.value = 0.3;
+  lp.connect(delay); delay.connect(fb); fb.connect(delay); delay.connect(wet); wet.connect(master);
+
+  const ping = (freq, start, dur, gain) => {
+    const t = now + start;
+    const o = ctx.createOscillator(); o.type = conf.type; o.frequency.value = freq;
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(gain, t + 0.012);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    o.connect(g); g.connect(lp);
+    o.start(t); o.stop(t + dur + 0.05);
+  };
+  for (const [f, s, d, g] of conf.seq) ping(f, s, d, g);
+
+  const total = Math.max(...conf.seq.map(n => n[1] + n[2])) + 0.5;
+  master.gain.setValueAtTime(0.55, now + total - 0.4);
+  master.gain.exponentialRampToValueAtTime(0.0001, now + total);
+  setTimeout(() => { try { ctx.close(); } catch (e) {} }, (total + 0.4) * 1000);
+}
 
 /* =====================================================================
    Composer (shop + customer share this view)
@@ -1128,6 +1198,16 @@ function renderComposer() {
                     style="font-family:${ft.css}">${ft.name}</button>`).join('')}
               </div>
             </div>
+            <div class="field">
+              <label class="lbl">الصوت <span style="color:var(--muted)">· يبدأ عند فتح الكرت</span></label>
+              <div class="opt-row" id="soundRow">
+                <button class="chip ${!f.soundId ? 'on' : ''}" data-sound="">تلقائي</button>
+                <button class="chip ${f.soundId === 'off' ? 'on' : ''}" data-sound="off">بدون</button>
+                ${SOUNDS.map(s => `
+                  <button class="chip ${f.soundId === s.id ? 'on' : ''}" data-sound="${s.id}">${s.name}</button>`).join('')}
+                <button class="chip" id="soundTest" type="button" title="استمع">استمع ▶</button>
+              </div>
+            </div>
             <div class="opt-note">«تلقائي» يتبع المناسبة المختارة. أي خيار تحدده يتجاوزها.</div>
           </div>
         </div>
@@ -1195,6 +1275,9 @@ function renderComposer() {
   pick('palRow', 'data-pal', 'paletteId');
   pick('animRow', 'data-anim', 'animId');
   pick('fontRow', 'data-font', 'fontId');
+  pick('soundRow', 'data-sound', 'soundId');
+  const soundTest = document.getElementById('soundTest');
+  if (soundTest) soundTest.onclick = e => { e.stopPropagation(); playCardSound(soundOf(state.form)); };
 
   const el = id => document.getElementById(id);
   const onInput = () => {
@@ -1249,7 +1332,7 @@ function refreshPreview() {
     from: f.from || '',
     shop: f.shop || 'باقة',
     message: f.message || 'كل عام وأنت بخير، وكل لحظة حلوة تكون من نصيبك.',
-    paletteId: f.paletteId, animId: f.animId, fontId: f.fontId,
+    paletteId: f.paletteId, animId: f.animId, fontId: f.fontId, soundId: f.soundId,
   }, true);
 }
 
@@ -1263,7 +1346,7 @@ async function makeCard() {
     to: f.to.trim(), from: f.from.trim(),
     shop: f.shop.trim() || 'باقة',
     message: f.message.trim(),
-    paletteId: f.paletteId, animId: f.animId, fontId: f.fontId,
+    paletteId: f.paletteId, animId: f.animId, fontId: f.fontId, soundId: f.soundId,
   };
   card.url = await CODEC.encodeCard(card);
   if (!state.customerMode) {
@@ -1607,6 +1690,14 @@ function renderRecipient(card) {
   document.body.style.background = p.bg;
   wrap.querySelector('#recBack').onclick = () => { location.href = HOME(); };
   wireRecipient(wrap, animOf(card), p.accent, false);
+
+  // The tap that opens the envelope is the gesture that lets audio play.
+  const env = wrap.querySelector('#env');
+  const sid = soundOf(card);
+  let played = false;
+  const play = () => { if (played) return; played = true; playCardSound(sid); };
+  env.addEventListener('click', play);
+  env.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') play(); });
 }
 
 // Shared by the live page and the preview iframe, so it is serialised by name.
