@@ -969,13 +969,17 @@ const QR = (() => {
     H: [1,1,2,4,4,4,5,6,8,8,11,11,16,16,18,16,19,21,25,25,25,34,30,32,35,37,40,42,45,48,51,54,57,60,63,66,70,74,77,81]
   };
 
+  // Raw data modules available in the symbol, per ISO/IEC 18004.
+  // Both the alignment-pattern cost and the 36 version-information modules
+  // are SUBTRACTED. Folding the 36 into `r` before `n - r` flips its sign and
+  // over-reports capacity by 72 bits on every version >= 7, which silently
+  // truncates the last 9 codewords and produces an unscannable symbol.
   const capacityBits = ver => {
-    const n = (16 * ver + 128) * ver + 64;
+    let n = (16 * ver + 128) * ver + 64;
     if (ver >= 2) {
       const align = Math.floor(ver / 7) + 2;
-      let r = (25 * align - 10) * align - 55;
-      if (ver >= 7) r -= 36;
-      return n - r;
+      n -= (25 * align - 10) * align - 55;
+      if (ver >= 7) n -= 36;
     }
     return n;
   };
@@ -2254,6 +2258,12 @@ function renderExport(card) {
   const oc = OCCASIONS.find(o => o.id === card.occasionId) || OCCASIONS[0];
   const url = cardUrl(card);
   let currentLayout = 'card';
+
+  // A longer message makes a denser symbol, which needs a physically larger
+  // print to stay scannable. Phone cameras want roughly 0.5mm per module.
+  const modules = QR.encode(url, 'M').size;
+  const minMm = Math.ceil((modules + 8) * 0.5 / 5) * 5;
+
   const app = document.getElementById('app');
   app.innerHTML = `
     <div class="export-page">
@@ -2307,7 +2317,9 @@ function renderExport(card) {
             </div>
           </div>
           <div class="export-notes">
-            <strong>نصيحة</strong>: اطبع البطاقة على كرت ثقيل (300 جرام). حجم البطاقة المقترح <strong>5×8 سم</strong>. لطباعة الملصق استخدم ورق ذاتي اللصق.
+            <strong>مقاس الطباعة</strong>: هذا الرمز ${modules}×${modules} وحدة، فلا تطبع الرمز نفسه بعرض أقل من <strong>${minMm} مم</strong> وإلا صعب على الكاميرا قراءته. رسالة أقصر تعطي رمزًا أوضح.
+            <br><br>
+            اطبع على كرت ثقيل (300 جرام)، وللملصق استخدم ورقًا ذاتي اللصق.
           </div>
         </aside>
         <main class="export-main">
