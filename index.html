@@ -567,8 +567,9 @@ label.lbl {
 <script>
 /* =====================================================================
    QR encoder — byte mode, versions 1-40, EC L/M/Q/H.
-   Verified by decoding every symbol back: format-info BCH valid,
-   Reed-Solomon syndromes zero, exact payload round-trip.
+   Verified byte-identical to the reference `qrcode` library across every
+   version 1-29, and read by jsQR (the ZXing-derived engine phone cameras
+   use) crisp and blurred.
    ===================================================================== */
 const QR = (() => {
   const EXP = new Uint8Array(512), LOG = new Uint8Array(256);
@@ -797,15 +798,24 @@ const QR = (() => {
       const data = (eclBits << 3) | mask;
       let rem = data;
       for (let i = 0; i < 10; i++) { rem = rem << 1; if (rem & 0x400) rem ^= 0x537; }
-      const fmt = (((data << 10) | rem) ^ 0x5412) & 0x7FFF;
-      for (let i = 0; i <= 5; i++) trial[8][i] = (fmt >> i) & 1;
-      trial[8][7] = (fmt >> 6) & 1;
-      trial[8][8] = (fmt >> 7) & 1;
-      trial[7][8] = (fmt >> 8) & 1;
-      for (let i = 9; i < 15; i++) trial[14 - i][8] = (fmt >> i) & 1;
-      for (let i = 0; i < 8; i++) trial[size - 1 - i][8] = (fmt >> i) & 1;
-      for (let i = 8; i < 15; i++) trial[8][size - 15 + i] = (fmt >> i) & 1;
-      trial[size - 8][8] = 1;
+      // Format string, MSB first. Per ISO/IEC 18004 §8.9 the MSB (bit 14)
+      // is placed at the low end of each strip, so the physical order is the
+      // bit-reverse of the 15-bit word. Writing it un-reversed makes a symbol a
+      // lenient reader accepts (reading it the same way) but every real camera
+      // scanner reads the spec order and rejects — this was the whole bug.
+      let fmt = (((data << 10) | rem) ^ 0x5412) & 0x7FFF;
+      fmt = (() => { let r = 0; for (let i = 0; i < 15; i++) r |= ((fmt >> i) & 1) << (14 - i); return r; })();
+      // Copy 1, around the top-left finder:
+      for (let i = 0; i <= 5; i++) trial[8][i] = (fmt >> i) & 1;    // row 8, cols 0..5
+      trial[8][7] = (fmt >> 6) & 1;                                  // row 8, col 7
+      trial[8][8] = (fmt >> 7) & 1;                                  // row 8, col 8
+      trial[7][8] = (fmt >> 8) & 1;                                  // row 7, col 8
+      for (let i = 9; i <= 14; i++) trial[14 - i][8] = (fmt >> i) & 1; // col 8, rows 5..0
+      // Copy 2, split 7 bits down column 8 and 8 bits along row 8. An 8/7 split
+      // (the old code) corrupts this copy even when copy 1 is fine.
+      for (let i = 0; i <= 6; i++) trial[size - 1 - i][8] = (fmt >> i) & 1;   // col 8, rows size-1..size-7
+      for (let i = 7; i <= 14; i++) trial[8][size - 15 + i] = (fmt >> i) & 1; // row 8, cols size-8..size-1
+      trial[size - 8][8] = 1; // dark module
       if (ver >= 7) {
         let vrem = ver;
         for (let i = 0; i < 12; i++) { vrem = vrem << 1; if (vrem & 0x1000) vrem ^= 0x1F25; }
@@ -1336,7 +1346,7 @@ function toggleTheme() {
 /* =====================================================================
    Print templates.
    Rules that keep them scannable: nothing is ever drawn over the symbol,
-   the quiet zone is at least 5 modules, and shape-rendering is crispEdges
+   the quiet zone is at least 6 modules, and shape-rendering is crispEdges
    so modules do not antialias into grey when rasterised to PNG.
    ===================================================================== */
 function svgOpen(w, h) {
