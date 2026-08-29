@@ -2042,7 +2042,10 @@ async function showResult(card) {
     try { await navigator.clipboard.writeText(url); toast('نُسخ الرابط'); }
     catch { toast('انسخ الرابط من الحقل'); }
   };
-  document.getElementById('openBtn').onclick = () => { location.href = url; };
+  document.getElementById('openBtn').onclick = () => {
+    try { sessionStorage.setItem('baaqa.nav', '1'); } catch (e) {}  // shop preview → keep a back button
+    location.href = url;
+  };
   document.getElementById('scanBtn').onclick = () => showScanView(url, size);
   document.getElementById('expBtn').onclick = () => {
     if (!card.id || state.customerMode) { EXPORT_CARD = card; location.hash = 'x'; }
@@ -2672,7 +2675,14 @@ function renderRecipient(card) {
   wrap.style.cssText = `--rec-bg:${p.bg};--rec-ink:${p.ink};--rec-accent:${p.accent};--rec-font:${ft.css}`;
   document.body.appendChild(wrap);
   document.body.style.background = p.bg;
-  const back = `<button class="rec-back" id="recBack">‹ رجوع</button>`;
+  // The back button returns to the composer (the shop's settings), so it must
+  // never appear for a recipient who scanned the code. It shows ONLY when the
+  // shop opened the card from inside the app — a one-shot flag set just before
+  // navigating. A cold scan has no flag, and private-mode failures default to
+  // hidden, so the recipient never reaches the settings.
+  let fromApp = false;
+  try { fromApp = sessionStorage.getItem('baaqa.nav') === '1'; sessionStorage.removeItem('baaqa.nav'); } catch (e) {}
+  const back = fromApp ? `<button class="rec-back" id="recBack">‹ رجوع</button>` : '';
   const wireBack = () => { const b = wrap.querySelector('#recBack'); if (b) b.onclick = () => { location.href = HOME(); }; };
 
   // A scheduled card stays locked behind a countdown until its moment, then
