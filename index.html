@@ -143,6 +143,29 @@ h1.title em { color: var(--accent); font-style: italic; font-weight: 400; }
 }
 .edit-banner button:hover { border-color: var(--ink); }
 
+.trial-banner {
+  display: flex; align-items: center; gap: 13px; margin-top: 18px;
+  padding: 12px 16px; border-radius: 14px;
+  background: color-mix(in oklab, var(--gold) 12%, var(--surface));
+  border: 1px solid color-mix(in oklab, var(--gold) 34%, transparent);
+}
+.trial-banner b { font-family: var(--font-display); display: block; font-size: 15px; }
+.trial-banner span { font-size: 12.5px; color: var(--muted); }
+.trial-pill {
+  width: 42px; height: 42px; flex-shrink: 0; border-radius: 50%; display: grid; place-items: center;
+  font-family: var(--font-display); font-weight: 700; font-size: 18px; background: var(--gold); color: #fff;
+}
+.gate { min-height: 100vh; display: grid; place-items: center; padding: 24px; }
+.gate-card {
+  background: var(--surface); border: 1px solid var(--line); border-radius: 20px;
+  padding: 40px 32px; max-width: 420px; width: 100%; text-align: center; box-shadow: var(--shadow-md);
+}
+.gate-card h1 { font-family: var(--font-display); font-size: 27px; margin: 6px 0 10px; }
+.gate-card p { color: var(--muted); margin: 0 0 20px; }
+.gate-mark { width: 52px; height: 52px; border-radius: 50%; margin: 0 auto 8px;
+  background: radial-gradient(circle at 30% 30%, var(--blush), var(--accent) 72%); }
+.gate-note { margin-top: 14px; font-size: 14px; color: var(--muted); }
+
 .composer {
   display: grid; grid-template-columns: 1.08fr 0.92fr;
   gap: 24px; margin-top: 26px; align-items: start;
@@ -1523,10 +1546,40 @@ const freshForm = () => ({ occasionId:'birthday', to:'', from:'', shop:'', messa
 const state = {
   customerMode: false,
   editId: null,   // when set, makeCard updates this saved card instead of adding one
+  trial: null,    // set from a ?t= trial link: { shop, limit, expiry, contact, token, used }
   form: { occasionId:'birthday', to:'', from:'', shop:'زهور المدينة', message:'',
           paletteId:null, animId:null, fontId:'naskh', soundId:null, styleId:null,
           ytId:null, ytStart:0, openMode:0, openAt:0 },
 };
+
+/* =====================================================================
+   Trial links — a per-shop limited demo, no backend and no code to enter.
+   The seller mints a ?t= link (from #invite) carrying the shop name, a
+   card limit, an expiry and the seller's contact; the shop opens it and
+   creates up to the limit, then hits a sign-up wall. Usage is tracked in
+   the shop's browser, so this is a SOFT trial (clearing storage or a new
+   browser resets it) — enough to run a sales conversation. The bare site
+   stays open for the seller.
+   ===================================================================== */
+const arNum = n => String(n).replace(/\d/g, d => '٠١٢٣٤٥٦٧٨٩'[+d]);
+const waLink = c => { const d = String(c || '').replace(/[^\d+]/g, '').replace(/^\+/, ''); return d ? 'https://wa.me/' + d : ''; };
+
+const TRIAL = (() => {
+  const enc = s => btoa(unescape(encodeURIComponent(s))).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
+  const dec = s => { s = s.replace(/-/g,'+').replace(/_/g,'/'); while (s.length % 4) s += '='; return decodeURIComponent(escape(atob(s))); };
+  const make = ({ shop, limit, days, contact }) => {
+    const exp = days ? Math.floor(Date.now() / 1000) + Math.round(days * 86400) : 0;
+    return enc(JSON.stringify({ s: shop || '', n: Math.max(1, limit | 0) || 5, x: exp, c: contact || '' }));
+  };
+  const parse = token => { try { const j = JSON.parse(dec(token));
+    return { shop: j.s || '', limit: Math.max(1, +j.n || 5), expiry: +j.x || 0, contact: j.c || '', token }; }
+    catch (e) { return null; } };
+  const key = t => 'baaqa.trial.' + t;
+  const getUsed = t => { try { return +localStorage.getItem(key(t)) || 0; } catch { return 0; } };
+  const setUsed = (t, n) => { try { localStorage.setItem(key(t), String(n)); } catch {} };
+  return { make, parse, getUsed, setUsed };
+})();
+const trialRemaining = () => state.trial ? Math.max(0, state.trial.limit - TRIAL.getUsed(state.trial.token)) : Infinity;
 
 // Play one short synthesised phrase. Called on the envelope's open gesture, so
 // the browser's autoplay gate is satisfied. All voices decay on their own; the
@@ -1596,7 +1649,8 @@ function renderComposer() {
           ${state.customerMode ? '' : `
             <button class="tab active">إنشاء كرت</button>
             <button class="tab" id="tabSaved">المحفوظة</button>
-            <button class="tab" id="brandBtn">هوية المحل</button>`}
+            <button class="tab" id="brandBtn">هوية المحل</button>
+            ${state.trial ? '' : `<a class="tab" href="#invite">روابط التجربة</a>`}`}
           <button class="icon-btn" id="themeBtn" title="السمة" aria-label="تبديل السمة">
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
           </button>
@@ -1604,6 +1658,7 @@ function renderComposer() {
       </div>
     </header>
     <main>
+      ${state.trial ? trialBanner() : ''}
       <div class="eyebrow">${state.customerMode ? 'صمّم كرتك' : 'لوحة المحل'}</div>
       <h1 class="title">${state.customerMode
         ? 'اكتب كلمتك وصمّم <em>كرتك</em> بنفسك'
@@ -1749,7 +1804,7 @@ function renderComposer() {
                 <button class="btn btn-secondary" id="btnReplay">إعادة الحركة</button>
                 <button class="btn btn-primary" id="btnMake">${state.editId ? 'حفظ التعديلات' : 'توليد الباركود'}</button>
               </div>
-              ${!state.customerMode ? `<button class="btn btn-secondary" id="btnBulk" style="width:100%;margin-top:9px">إنشاء بالجملة · قائمة أسماء</button>` : ''}
+              ${(!state.customerMode && !state.trial) ? `<button class="btn btn-secondary" id="btnBulk" style="width:100%;margin-top:9px">إنشاء بالجملة · قائمة أسماء</button>` : ''}
             </div>
           </div>
         </div>
@@ -1971,6 +2026,7 @@ function editCard(id) {
 async function makeCard() {
   const f = state.form;
   if (!f.message.trim()) { toast('اكتب رسالتك أولًا'); return; }
+  if (state.trial && trialRemaining() <= 0) { showPaywall(); return; }
   const btn = document.getElementById('btnMake');
   if (btn) { btn.disabled = true; btn.innerHTML = '<span class="spin"></span> جاري التوليد…'; }
   const editing = state.editId ? loadCards().find(c => c.id === state.editId) : null;
@@ -1986,6 +2042,9 @@ async function makeCard() {
   };
   if (editing) card.updatedAt = Date.now();
   card.url = await CODEC.encodeCard(card);
+  if (state.trial && !editing) {   // editing an existing card doesn't spend a trial credit
+    const n = TRIAL.getUsed(state.trial.token) + 1; TRIAL.setUsed(state.trial.token, n); state.trial.used = n;
+  }
   if (!state.customerMode) {
     let list = loadCards();
     list = editing ? list.map(c => c.id === card.id ? card : c) : (list.unshift(card), list);
@@ -2218,6 +2277,98 @@ function openBulkModal() {
     if (bd.querySelector('#bulkSave').checked) { const all = loadCards(); cards.forEach(c => all.unshift(c)); saveCards(all); }
     SHEET_BASE = cards; SHEET_COPIES = 1; SHEET_COLS = 2;
     close(); location.hash = 'sheet';
+  };
+}
+
+// The trial ribbon shown atop the composer for a shop on a ?t= link.
+function trialBanner() {
+  const t = state.trial, rem = trialRemaining();
+  const exp = t.expiry ? new Date(t.expiry * 1000).toLocaleDateString('ar', { day:'numeric', month:'long', year:'numeric' }) : '';
+  return `<div class="trial-banner">
+    <span class="trial-pill">${arNum(rem)}</span>
+    <div><b>نسخة تجريبية${t.shop ? ' · ' + esc(t.shop) : ''}</b>
+      <span>بقي لك ${arNum(rem)} من ${arNum(t.limit)} كروت${exp ? ' · تنتهي ' + exp : ''}</span></div>
+  </div>`;
+}
+function showPaywall() {
+  const t = state.trial; if (!t) return;
+  const wa = waLink(t.contact);
+  const bd = document.createElement('div'); bd.className = 'modal-bd';
+  bd.innerHTML = `<div class="modal" role="dialog" aria-modal="true" style="text-align:center">
+    <h3>انتهت تجربتك</h3>
+    <p class="msub">أنشأت ${arNum(t.limit)} كروت في النسخة التجريبية. للاستمرار بالنسخة الكاملة تواصل معنا.</p>
+    ${wa ? `<a class="btn btn-primary" style="width:100%" href="${wa}?text=${encodeURIComponent('أريد الاشتراك في نظام باقة')}" target="_blank" rel="noopener">تواصل على واتساب</a>` : ''}
+    ${t.contact ? `<div class="msub" style="margin-top:12px" dir="ltr">${esc(t.contact)}</div>` : ''}
+    <div class="modal-acts"><button class="btn btn-secondary" id="pwClose" style="flex:1">إغلاق</button></div>
+  </div>`;
+  document.body.appendChild(bd);
+  const close = () => bd.remove();
+  bd.addEventListener('click', e => { if (e.target === bd) close(); });
+  bd.querySelector('#pwClose').onclick = close;
+}
+function renderTrialEnded(tr) {
+  const wa = waLink(tr.contact);
+  document.getElementById('app').innerHTML = `
+    <div class="gate"><div class="gate-card">
+      <div class="gate-mark"></div>
+      <h1>انتهت مدة التجربة</h1>
+      <p>${tr.shop ? 'شكراً ' + esc(tr.shop) + '، ' : ''}انتهت صلاحية النسخة التجريبية. للاشتراك بالنسخة الكاملة تواصل معنا.</p>
+      ${wa ? `<a class="btn btn-primary" style="width:100%" href="${wa}?text=${encodeURIComponent('أريد الاشتراك في نظام باقة')}" target="_blank" rel="noopener">تواصل على واتساب</a>`
+        : (tr.contact ? `<div class="gate-note" dir="ltr">${esc(tr.contact)}</div>` : '')}
+    </div></div>`;
+}
+
+// Seller-only tool: mint a per-shop trial link. Reached at #invite (not linked
+// while a shop is inside a trial).
+function renderInvite() {
+  document.getElementById('app').innerHTML = `
+    <header class="chrome"><div class="chrome-inner">
+      <div class="logo"><span class="logo-mark"></span><div>باقة<small>Baaqa · Gift Cards</small></div></div>
+      <div class="chrome-spacer"></div>
+      <a class="tab" href="${HOME()}">‹ المصمّم</a>
+    </div></header>
+    <main style="max-width:660px">
+      <div class="eyebrow">أداة البائع</div>
+      <h1 class="title">أنشئ <em>رابط تجربة</em> لكل محل</h1>
+      <p class="sub">لكل محل رابطه الخاص وحدّه ومدّته. أرسله له ليجرّب النظام، وحين تنتهي التجربة تظهر له دعوة للاشتراك على رقمك.</p>
+      <div class="panel" style="margin-top:22px">
+        <div class="field"><label class="lbl" for="ivShop">اسم المحل</label>
+          <input id="ivShop" type="text" placeholder="زهور المدينة"></div>
+        <div class="grid2">
+          <div class="field"><label class="lbl" for="ivLimit">عدد الكروت المسموح</label>
+            <input id="ivLimit" type="number" value="5" min="1"></div>
+          <div class="field"><label class="lbl" for="ivDays">الصلاحية (أيام) · ٠ = دائم</label>
+            <input id="ivDays" type="number" value="7" min="0"></div>
+        </div>
+        <div class="field"><label class="lbl" for="ivContact">رقم تواصلك (واتساب)</label>
+          <input id="ivContact" type="text" dir="ltr" placeholder="9665xxxxxxxx"></div>
+        <div class="row" style="margin-top:16px">
+          <button class="btn btn-primary" id="ivGen" style="flex:1">توليد الرابط</button>
+        </div>
+        <div id="ivOut" style="display:none;margin-top:16px">
+          <div class="linkbox"><input id="ivLink" type="text" readonly onclick="this.select()"><button id="ivCopy">نسخ</button></div>
+          <div class="row" style="margin-top:10px">
+            <a class="btn btn-secondary" id="ivWa" target="_blank" rel="noopener" style="flex:1">أرسله عبر واتساب</a>
+          </div>
+          <div class="opt-note">شارك هذا الرابط مع المحل فقط. كل رابط يتتبّع استخدامه على جهاز المحل.</div>
+        </div>
+      </div>
+    </main>`;
+  const el = id => document.getElementById(id);
+  el('ivGen').onclick = () => {
+    const shop = el('ivShop').value.trim();
+    const limit = Math.max(1, +el('ivLimit').value || 5);
+    const days = Math.max(0, +el('ivDays').value || 0);
+    const contact = el('ivContact').value.trim();
+    const link = HOME() + '?t=' + TRIAL.make({ shop, limit, days, contact });
+    el('ivLink').value = link;
+    el('ivOut').style.display = 'block';
+    const msg = 'جرّب نظام باقة لكروت الإهداء بالباركود' + (shop ? ' — نسخة تجريبية لـ' + shop : '') + ':\n' + link;
+    el('ivWa').href = (waLink(contact) || 'https://wa.me/') + '?text=' + encodeURIComponent(msg);
+  };
+  el('ivCopy').onclick = async () => {
+    try { await navigator.clipboard.writeText(el('ivLink').value); toast('نُسخ الرابط'); }
+    catch { toast('انسخ الرابط من الحقل'); }
   };
 }
 
@@ -3049,6 +3200,23 @@ async function boot() {
     if (card) { renderRecipient(card); return; }
     toast('رابط الكرت غير صالح');
   }
+
+  // Seller's link generator, and the per-shop trial link. Scanning a card
+  // (handled above) is never affected by any of this.
+  if (h === '#invite') { renderInvite(); return; }
+  const tParam = new URLSearchParams(location.search).get('t');
+  if (tParam) {
+    const tr = TRIAL.parse(tParam);
+    if (!tr) { toast('رابط التجربة غير صالح'); state.trial = null; }
+    else if (tr.expiry && tr.expiry * 1000 < Date.now()) { renderTrialEnded(tr); return; }
+    else {
+      state.trial = { ...tr, used: TRIAL.getUsed(tr.token) };
+      if (tr.shop && (!state.form.shop || state.form.shop === 'زهور المدينة')) state.form.shop = tr.shop;
+    }
+  } else {
+    state.trial = null;
+  }
+
   if (h.startsWith('#e/')) {
     const card = loadCards().find(c => c.id === h.slice(3));
     if (card) { await renderExport(card); return; }
