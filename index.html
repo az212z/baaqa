@@ -570,6 +570,61 @@ label.lbl {
   background: radial-gradient(ellipse at 50% 50%, transparent 42%, rgba(0,0,0,.34) 92%);
 }
 
+/* Scratch-to-reveal: the message sits ready underneath; a gold foil painted on a
+   canvas is erased with the finger. `instant` shows the content with no entrance
+   animation so scratching uncovers the final text directly. */
+.reveal.instant .reveal-eyebrow,
+.reveal.instant .reveal-orn,
+.reveal.instant .reveal-mono,
+.reveal.instant .reveal-to,
+.reveal.instant .reveal-msg,
+.reveal.instant .reveal-sig { animation: none; opacity: 1; transform: none; }
+.scratch {
+  position: fixed; inset: 0; z-index: 5; touch-action: none; cursor: grab;
+  /* Pin the CSS box to the viewport so the canvas `width`/`height` attributes
+     (its backing-store size) do not become its layout size — under RTL that
+     anchored it right and pushed it off-screen left. */
+  width: 100vw; height: 100vh;
+}
+.scratch.gone { opacity: 0; transition: opacity .6s ease; pointer-events: none; }
+.scratch-hint {
+  position: fixed; top: 50%; left: 0; right: 0; z-index: 6; text-align: center;
+  transform: translateY(-50%); pointer-events: none; transition: opacity .3s;
+  color: rgba(70,45,10,.72); font-family: var(--font-eyebrow);
+  letter-spacing: .28em; font-size: 13px; text-transform: uppercase;
+  animation: pulseUp 2.2s ease-in-out infinite;
+}
+
+/* Scheduled reveal: a countdown holds the card shut until its moment. */
+.countdown { text-align: center; color: var(--rec-ink); max-width: 560px; padding: 0 24px; }
+.cd-mono {
+  width: 74px; height: 74px; margin: 0 auto 18px; border-radius: 50%;
+  border: 1px solid var(--rec-accent); display: grid; place-items: center;
+  font-family: var(--rec-font, var(--font-display)); font-size: 34px; color: var(--rec-accent);
+}
+.cd-mono span { line-height: 1; }
+.cd-eyebrow {
+  font-family: var(--font-eyebrow); font-size: 11px; letter-spacing: .3em;
+  text-transform: uppercase; color: var(--rec-accent); margin-bottom: 6px;
+}
+.cd-to { font-family: var(--rec-font, var(--font-display)); font-size: clamp(22px, 5vw, 34px); margin: 6px 0 20px; }
+.cd-label {
+  font-family: var(--font-eyebrow); letter-spacing: .3em; font-size: 11px;
+  text-transform: uppercase; color: var(--rec-accent); opacity: .8; margin-bottom: 16px;
+}
+.cd-timer { display: flex; gap: 12px; justify-content: center; direction: ltr; }
+.cd-u { display: flex; flex-direction: column; align-items: center; min-width: 58px; }
+.cd-u b {
+  font-family: var(--rec-font, var(--font-display)); font-weight: 700; line-height: 1;
+  font-size: clamp(26px, 7vw, 44px); width: 100%; padding: 12px 6px; border-radius: 12px;
+  background: color-mix(in oklab, var(--rec-accent) 15%, transparent);
+  border: 1px solid color-mix(in oklab, var(--rec-accent) 40%, transparent);
+}
+.cd-u i { font-style: normal; font-family: var(--font-eyebrow); font-size: 10px;
+  letter-spacing: .1em; color: var(--rec-accent); margin-top: 9px; }
+.cd-date { margin-top: 22px; font-size: 12px; color: color-mix(in oklab, var(--rec-ink) 55%, transparent);
+  font-family: var(--font-eyebrow); letter-spacing: .06em; }
+
 /* Full-screen symbol for scanning off a display */
 .scanview {
   position: fixed; inset: 0; z-index: 300; background: #ffffff;
@@ -1104,18 +1159,21 @@ const CODEC = (() => {
   const inflate = bytes => pump(new DecompressionStream('deflate-raw'), bytes);
 
   // Header, then 2-byte-length-prefixed utf8 fields. Format 1 is
-  // [1][occ][palette][anim][font]; format 2 appends a sound byte; format 3
-  // appends a style byte; format 4 appends a 2-byte YouTube start-seconds and a
-  // 5th field, the 11-char YouTube id. A card with no song stays format 3, so the
+  // [1][occ][palette][anim][font]; 2 appends a sound byte; 3 a style byte; 4 a
+  // 2-byte YouTube start-seconds + a 5th field (the 11-char id); 5 appends an
+  // open-mode byte (0 envelope, 1 scratch) + a 4-byte open-at Unix seconds
+  // (0 = open now). A card only advances to the format its features need, so the
   // common case keeps the smaller symbol. Older links keep decoding — missing
   // fields fall back to their defaults.
   function pack(card) {
     const yt = card.ytId && /^[\w-]{11}$/.test(card.ytId) ? card.ytId : '';
-    const fmt = yt ? 4 : 3;
+    const om = card.openMode === 1 ? 1 : 0;
+    const oa = Math.max(0, card.openAt | 0);
+    const fmt = (om || oa) ? 5 : (yt ? 4 : 3);
     const vals = [card.to, card.from, card.shop, card.message];
     if (fmt >= 4) vals.push(yt);
     const fields = vals.map(v => enc.encode(v || ''));
-    const head = fmt >= 4 ? 9 : 7;
+    const head = fmt >= 5 ? 14 : fmt >= 4 ? 9 : 7;
     const out = new Uint8Array(head + fields.reduce((n,f) => n + 2 + f.length, 0));
     let o = 0;
     out[o++] = fmt;
@@ -1126,19 +1184,21 @@ const CODEC = (() => {
     out[o++] = card.soundId === 'off' ? 254 : card.soundId ? Math.max(0, SOUNDS.findIndex(x => x.id === card.soundId)) : 255;
     out[o++] = card.styleId   ? Math.max(0, STYLES.findIndex(x => x.id === card.styleId))     : 255;
     if (fmt >= 4) { const st = Math.max(0, Math.min(65535, card.ytStart | 0)); out[o++] = st >> 8; out[o++] = st & 255; }
+    if (fmt >= 5) { out[o++] = om; out[o++] = (oa >>> 24) & 255; out[o++] = (oa >>> 16) & 255; out[o++] = (oa >>> 8) & 255; out[o++] = oa & 255; }
     for (const f of fields) { out[o++] = f.length >> 8; out[o++] = f.length & 255; out.set(f, o); o += f.length; }
     return out;
   }
   function unpack(bytes) {
     let o = 0;
     const fmt = bytes[o++];
-    if (fmt < 1 || fmt > 4) return null;
+    if (fmt < 1 || fmt > 5) return null;
     const occ = OCCASIONS[bytes[o++]] || OCCASIONS[0];
     const pi = bytes[o++], ai = bytes[o++], fi = bytes[o++];
-    let sid = null, tid = null, yts = 0;
+    let sid = null, tid = null, yts = 0, om = 0, oa = 0;
     if (fmt >= 2) { const s = bytes[o++]; sid = s === 255 ? null : s === 254 ? 'off' : (SOUNDS[s] || {}).id || null; }
     if (fmt >= 3) { const t = bytes[o++]; tid = t === 255 ? null : (STYLES[t] || {}).id || null; }
     if (fmt >= 4) { yts = (bytes[o++] << 8) | bytes[o++]; }
+    if (fmt >= 5) { om = bytes[o++]; const b0 = bytes[o++], b1 = bytes[o++], b2 = bytes[o++], b3 = bytes[o++]; oa = ((b0 << 24) | (b1 << 16) | (b2 << 8) | b3) >>> 0; }
     const read = () => {
       const len = (bytes[o++] << 8) | bytes[o++];
       const s = dec.decode(bytes.subarray(o, o + len)); o += len; return s;
@@ -1154,13 +1214,16 @@ const CODEC = (() => {
       styleId:   tid,
       ytId:      yt,
       ytStart:   yts,
+      openMode:  om,
+      openAt:    oa,
       to, from, shop, message,
     };
   }
 
   const legacyJson = card => ({ o: card.occasionId, t: card.to, m: card.message,
     f: card.from, s: card.shop, p: card.paletteId, a: card.animId, ft: card.fontId,
-    sd: card.soundId, st: card.styleId, yt: card.ytId, yts: card.ytStart });
+    sd: card.soundId, st: card.styleId, yt: card.ytId, yts: card.ytStart,
+    om: card.openMode, oa: card.openAt });
 
   // The payload lives in the QUERY STRING, not the fragment. Plenty of scanner
   // apps and messengers cut a URL at '#' or drop what follows it, which opened
@@ -1175,7 +1238,8 @@ const CODEC = (() => {
 
   const fromLegacyJson = j => ({ occasionId: j.o, to: j.t, message: j.m, from: j.f,
     shop: j.s, paletteId: j.p || null, animId: j.a || null, fontId: j.ft || null,
-    soundId: j.sd || null, styleId: j.st || null, ytId: j.yt || null, ytStart: j.yts || 0 });
+    soundId: j.sd || null, styleId: j.st || null, ytId: j.yt || null, ytStart: j.yts || 0,
+    openMode: j.om || 0, openAt: j.oa || 0 });
 
   // Reads whichever form the link arrived in: the query parameters used now,
   // and the '#d/' and '#c/' fragments used by cards already printed.
@@ -1359,14 +1423,21 @@ function parseYouTube(input) {
   return (id && /^[\w-]{11}$/.test(id)) ? { id, start } : null;
 }
 
+// Epoch seconds -> the local "YYYY-MM-DDTHH:MM" a datetime-local input expects.
+function toLocalInput(sec) {
+  const d = new Date(sec * 1000), p = n => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+
 const freshForm = () => ({ occasionId:'birthday', to:'', from:'', shop:'', message:'',
-  paletteId:null, animId:null, fontId:'naskh', soundId:null, styleId:null, ytId:null, ytStart:0 });
+  paletteId:null, animId:null, fontId:'naskh', soundId:null, styleId:null, ytId:null, ytStart:0,
+  openMode:0, openAt:0 });
 const state = {
   customerMode: false,
   editId: null,   // when set, makeCard updates this saved card instead of adding one
   form: { occasionId:'birthday', to:'', from:'', shop:'زهور المدينة', message:'',
           paletteId:null, animId:null, fontId:'naskh', soundId:null, styleId:null,
-          ytId:null, ytStart:0 },
+          ytId:null, ytStart:0, openMode:0, openAt:0 },
 };
 
 // Play one short synthesised phrase. Called on the envelope's open gesture, so
@@ -1535,6 +1606,25 @@ function renderComposer() {
             </div>
             <div class="opt-note">«تلقائي» يتبع المناسبة المختارة. أي خيار تحدده يتجاوزها. إن أضفت أغنية يوتيوب فهي تحلّ محل الصوت المصمّم.</div>
           </div>
+
+          <div class="panel">
+            <div class="panel-title">طريقة الفتح والتوقيت</div>
+            <label class="lbl">أسلوب الفتح</label>
+            <div class="opt-row" id="openModeRow">
+              <button class="chip ${f.openMode !== 1 ? 'on' : ''}" data-open="0">ظرف مغلق</button>
+              <button class="chip ${f.openMode === 1 ? 'on' : ''}" data-open="1">كشط الكرت</button>
+            </div>
+            <div class="field"><label class="lbl">موعد الفتح</label>
+              <div class="opt-row" id="schedRow">
+                <button class="chip ${!f.openAt ? 'on' : ''}" data-sched="now">الآن</button>
+                <button class="chip ${f.openAt ? 'on' : ''}" data-sched="at">في وقت محدد</button>
+              </div>
+              <div id="schedWrap" style="margin-top:10px;${f.openAt ? '' : 'display:none'}">
+                <input id="fSchedAt" type="datetime-local" value="${f.openAt ? toLocalInput(f.openAt) : ''}">
+                <div class="opt-note">قبل الموعد يظهر عدّاد تنازلي، وفي الوقت ينفتح الكرت. يعتمد على ساعة جهاز المستلم.</div>
+              </div>
+            </div>
+          </div>
         </div>
 
         <div>
@@ -1638,6 +1728,27 @@ function renderComposer() {
   });
   renderYtStatus();
 
+  const openRow = el('openModeRow');
+  if (openRow) openRow.onclick = e => {
+    const b = e.target.closest('[data-open]'); if (!b) return;
+    f.openMode = +b.dataset.open;
+    openRow.querySelectorAll('.chip').forEach(x => x.classList.toggle('on', +x.dataset.open === f.openMode));
+    refreshPreview();
+  };
+  const schedRow = el('schedRow'), schedWrap = el('schedWrap'), fSchedAt = el('fSchedAt');
+  const syncSched = () => { if (schedRow) schedRow.querySelectorAll('.chip').forEach(x =>
+    x.classList.toggle('on', (x.dataset.sched === 'at') === (f.openAt > 0))); };
+  if (schedRow) schedRow.onclick = e => {
+    const b = e.target.closest('[data-sched]'); if (!b) return;
+    if (b.dataset.sched === 'now') { f.openAt = 0; schedWrap.style.display = 'none'; }
+    else { schedWrap.style.display = 'block'; if (fSchedAt && fSchedAt.value) f.openAt = Math.floor(new Date(fSchedAt.value).getTime() / 1000); }
+    syncSched(); updateDensityHint();
+  };
+  if (fSchedAt) fSchedAt.addEventListener('input', () => {
+    f.openAt = fSchedAt.value ? Math.floor(new Date(fSchedAt.value).getTime() / 1000) : 0;
+    syncSched(); updateDensityHint();
+  });
+
   el('btnMake').onclick = makeCard;
   el('btnReplay').onclick = () => refreshPreview();
 
@@ -1716,6 +1827,7 @@ function refreshPreview() {
     shop: f.shop || 'باقة',
     message: f.message || 'كل عام وأنت بخير، وكل لحظة حلوة تكون من نصيبك.',
     paletteId: f.paletteId, animId: f.animId, fontId: f.fontId, soundId: f.soundId, styleId: f.styleId,
+    openMode: f.openMode,   // preview shows scratch vs envelope; schedule is ignored in preview
   }, true);
 }
 
@@ -1748,7 +1860,7 @@ async function makeCard() {
     shop: f.shop.trim() || 'باقة',
     message: f.message.trim(),
     paletteId: f.paletteId, animId: f.animId, fontId: f.fontId, soundId: f.soundId, styleId: f.styleId,
-    ytId: f.ytId, ytStart: f.ytStart,
+    ytId: f.ytId, ytStart: f.ytStart, openMode: f.openMode, openAt: f.openAt,
   };
   if (editing) card.updatedAt = Date.now();
   card.url = await CODEC.encodeCard(card);
@@ -2223,18 +2335,25 @@ function recipientBody(card) {
   const o = occOf(card.occasionId);
   const mono = initialOf(card);
   const style = styleOf(card);
-  return `
-    <canvas class="rec-canvas" id="cv"></canvas>
-    <div class="rec-vignette"></div>
-    <div class="rec-stage">
-      <div class="envelope" id="env" role="button" tabindex="0" aria-label="افتح الكرت">
+  const scratch = card.openMode === 1;
+  // Scratch mode lays the message ready underneath a gold foil (so scratching
+  // uncovers it directly); envelope mode keeps it hidden until the flap opens.
+  const opener = scratch
+    ? `<canvas class="scratch" id="scratch"></canvas>
+       <div class="scratch-hint" id="scratchHint">اكشط لتظهر الرسالة</div>`
+    : `<div class="envelope" id="env" role="button" tabindex="0" aria-label="افتح الكرت">
         <div class="env-body"></div>
         <div class="env-flap"></div>
         <div class="env-inner"><span class="env-inner-mark">${mono}</span></div>
         <div class="env-seal"><div class="env-seal-circle">${mono}</div></div>
         <div class="env-hint">اضغط لفتح الكرت</div>
-      </div>
-      <div class="reveal" id="rev" data-style="${style}"><div class="reveal-inner">
+      </div>`;
+  return `
+    <canvas class="rec-canvas" id="cv"></canvas>
+    <div class="rec-vignette"></div>
+    <div class="rec-stage">
+      ${opener}
+      <div class="reveal${scratch ? ' on instant' : ''}" id="rev" data-style="${style}"><div class="reveal-inner">
         <div class="reveal-mono"><span>${mono}</span></div>
         <div class="reveal-eyebrow">${esc(o.eyebrow)}</div>
         <div class="reveal-orn"><i></i><b></b><i></i></div>
@@ -2247,6 +2366,38 @@ function recipientBody(card) {
       </div></div>
     </div>
     <div class="rec-brand">من <strong>${esc(card.shop || 'باقة')}</strong></div>`;
+}
+
+// The "locked until a moment" screen — a live countdown over the card's motion.
+function countdownBody(card) {
+  const o = occOf(card.occasionId), mono = initialOf(card);
+  return `
+    <canvas class="rec-canvas" id="cv"></canvas>
+    <div class="rec-vignette"></div>
+    <div class="rec-stage"><div class="countdown">
+      <div class="cd-mono"><span>${mono}</span></div>
+      <div class="cd-eyebrow">${esc(o.eyebrow)}</div>
+      ${card.to ? `<div class="cd-to">${esc(card.to)}</div>` : ''}
+      <div class="cd-label">يُفتح بعد</div>
+      <div class="cd-timer" id="cdTimer"></div>
+      <div class="cd-date" id="cdDate"></div>
+    </div></div>
+    <div class="rec-brand">من <strong>${esc(card.shop || 'باقة')}</strong></div>`;
+}
+function startCountdown(root, targetMs, onDone) {
+  const timer = root.querySelector('#cdTimer'), dateEl = root.querySelector('#cdDate');
+  if (dateEl) { try { dateEl.textContent = new Date(targetMs).toLocaleString('ar', { dateStyle: 'full', timeStyle: 'short' }); } catch (e) {} }
+  const pad = n => String(n).padStart(2, '0');
+  const unit = (v, l) => `<span class="cd-u"><b>${pad(v)}</b><i>${l}</i></span>`;
+  const tick = () => {
+    const d = targetMs - Date.now();
+    if (d <= 0) { clearInterval(id); onDone(); return; }
+    const s = Math.floor(d / 1000), dd = Math.floor(s / 86400), hh = Math.floor(s % 86400 / 3600),
+      mm = Math.floor(s % 3600 / 60), ss = s % 60;
+    timer.innerHTML = unit(dd, 'يوم') + unit(hh, 'ساعة') + unit(mm, 'دقيقة') + unit(ss, 'ثانية');
+  };
+  tick();
+  const id = setInterval(tick, 1000);
 }
 
 function recipientDoc(card, autoplay) {
@@ -2266,25 +2417,41 @@ function recipientDoc(card, autoplay) {
     <script>
       ${MOTION_SRC()}
       ${wireRecipient.toString()}
-      wireRecipient(document, ${JSON.stringify(animOf(card))}, ${JSON.stringify(p.accent)}, ${!!autoplay});
+      ${wireScratch.toString()}
+      ${card.openMode === 1
+        ? `wireScratch(document, ${JSON.stringify(animOf(card))}, ${JSON.stringify(p.accent)}, {auto:true});`
+        : `wireRecipient(document, ${JSON.stringify(animOf(card))}, ${JSON.stringify(p.accent)}, ${!!autoplay});`}
     <\/script></body></html>`;
 }
 
 function renderRecipient(card) {
+  document.querySelectorAll('.recipient').forEach(n => n.remove());
   const p = paletteOf(card), ft = fontOf(card);
   document.getElementById('app').innerHTML = '';
   const wrap = document.createElement('div');
   wrap.className = 'recipient on';
   wrap.style.cssText = `--rec-bg:${p.bg};--rec-ink:${p.ink};--rec-accent:${p.accent};--rec-font:${ft.css}`;
-  wrap.innerHTML = `<button class="rec-back" id="recBack">‹ رجوع</button>` + recipientBody(card);
   document.body.appendChild(wrap);
   document.body.style.background = p.bg;
-  wrap.querySelector('#recBack').onclick = () => { location.href = HOME(); };
-  wireRecipient(wrap, animOf(card), p.accent, false);
+  const back = `<button class="rec-back" id="recBack">‹ رجوع</button>`;
+  const wireBack = () => { const b = wrap.querySelector('#recBack'); if (b) b.onclick = () => { location.href = HOME(); }; };
 
-  // The tap that opens the envelope is the gesture that lets audio play. A
-  // YouTube song, when set, plays instead of the synthesised sound.
-  const env = wrap.querySelector('#env');
+  // A scheduled card stays locked behind a countdown until its moment, then
+  // re-renders into the normal opener.
+  const openAtMs = (card.openAt || 0) * 1000;
+  if (openAtMs > Date.now()) {
+    wrap.innerHTML = back + countdownBody(card);
+    wireBack();
+    runMotion(wrap.querySelector('#cv'), animOf(card), p.accent);
+    startCountdown(wrap, openAtMs, () => renderRecipient(card));
+    return;
+  }
+
+  wrap.innerHTML = back + recipientBody(card);
+  wireBack();
+
+  // The open gesture (envelope tap, or the first scratch) is what lets audio
+  // play. A YouTube song, when set, plays instead of the synthesised sound.
   const sid = soundOf(card);
   let played = false;
   const play = () => {
@@ -2292,8 +2459,78 @@ function renderRecipient(card) {
     if (card.ytId) startYouTube(wrap, card.ytId, card.ytStart || 0);
     else playCardSound(sid);
   };
-  env.addEventListener('click', play);
-  env.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') play(); });
+
+  if (card.openMode === 1) {
+    wireScratch(wrap, animOf(card), p.accent, { onReveal: play });
+  } else {
+    wireRecipient(wrap, animOf(card), p.accent, false);
+    const env = wrap.querySelector('#env');
+    env.addEventListener('click', play);
+    env.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') play(); });
+  }
+}
+
+// Scratch-to-reveal wiring. The gold foil is painted on a canvas and erased
+// with destination-out where the finger drags; past ~42% cleared it wipes the
+// rest, runs the motion, and fires onReveal (sound/song). `auto` self-clears for
+// the composer preview. Serialised into the preview iframe alongside wireRecipient.
+function wireScratch(root, animId, accent, opts) {
+  opts = opts || {};
+  const cv = root.querySelector('#scratch');
+  const motion = root.querySelector('#cv');
+  const hint = root.querySelector('#scratchHint');
+  if (!cv) return;
+  const ctx = cv.getContext('2d');
+  const dpr = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
+  const paint = () => {
+    const w = cv.width, h = cv.height;
+    ctx.globalCompositeOperation = 'source-over';
+    const g = ctx.createLinearGradient(0, 0, w, h);
+    g.addColorStop(0, '#E9CE86'); g.addColorStop(.5, '#C9A14A'); g.addColorStop(1, '#B4842F');
+    ctx.fillStyle = g; ctx.fillRect(0, 0, w, h);
+    ctx.strokeStyle = 'rgba(255,255,255,.16)'; ctx.lineWidth = Math.max(6, w * .02);
+    for (let i = -1; i < 7; i++) { ctx.beginPath(); ctx.moveTo(i * w / 5, 0); ctx.lineTo(i * w / 5 + h * .4, h); ctx.stroke(); }
+    ctx.fillStyle = 'rgba(255,255,255,.10)';
+    for (let i = 0; i < 90; i++) ctx.fillRect((i * 97 % w), (i * 53 % h), 2, 2);
+  };
+  // The foil is position:fixed inset:0, i.e. the viewport — size it from the
+  // window so it is correct even before CSS layout settles.
+  const fit = () => { cv.width = Math.round(window.innerWidth * dpr); cv.height = Math.round(window.innerHeight * dpr); paint(); };
+  fit();
+  window.addEventListener('resize', fit);
+  const R = Math.round(26 * dpr);
+  let drawing = false, revealed = false, moves = 0;
+  const at = e => { const r = cv.getBoundingClientRect(), t = e.touches ? e.touches[0] : e;
+    return { x: (t.clientX - r.left) * dpr, y: (t.clientY - r.top) * dpr }; };
+  // destination-out removes coverage in proportion to the brush's alpha, so the
+  // brush must be fully opaque or the foil only fades instead of clearing.
+  const erase = (x, y) => { ctx.globalCompositeOperation = 'destination-out'; ctx.fillStyle = 'rgba(0,0,0,1)'; ctx.beginPath(); ctx.arc(x, y, R, 0, 6.28); ctx.fill(); };
+  const cleared = () => {
+    const w = cv.width, h = cv.height, step = Math.max(8, Math.floor(w / 60));
+    let clr = 0, tot = 0;
+    try {
+      const d = ctx.getImageData(0, 0, w, h).data;
+      for (let y = 0; y < h; y += step) for (let x = 0; x < w; x += step) { tot++; if (d[(y * w + x) * 4 + 3] < 128) clr++; }
+    } catch (e) { return 0; }
+    return tot ? clr / tot : 0;
+  };
+  const finish = () => {
+    if (revealed) return; revealed = true;
+    cv.classList.add('gone'); if (hint) hint.remove();
+    setTimeout(() => cv.remove(), 650);
+    runMotion(motion, animId, accent);
+    if (opts.onReveal) opts.onReveal();
+  };
+  const down = e => { drawing = true; if (hint) hint.style.opacity = '0'; const p = at(e); erase(p.x, p.y); e.preventDefault(); };
+  const move = e => { if (!drawing) return; const p = at(e); erase(p.x, p.y); if (++moves % 8 === 0 && cleared() > 0.42) finish(); e.preventDefault(); };
+  const up = () => { if (!drawing) return; drawing = false; if (cleared() > 0.42) finish(); };
+  cv.addEventListener('mousedown', down); cv.addEventListener('mousemove', move); window.addEventListener('mouseup', up);
+  cv.addEventListener('touchstart', down, { passive: false }); cv.addEventListener('touchmove', move, { passive: false }); window.addEventListener('touchend', up);
+  if (opts.auto) setTimeout(() => {
+    if (hint) hint.style.opacity = '0';
+    const w = cv.width, h = cv.height; let i = 0;
+    const sweep = setInterval(() => { for (let k = 0; k < 7; k++) erase(Math.random() * w, Math.random() * h); if (++i > 42) { clearInterval(sweep); finish(); } }, 30);
+  }, 950);
 }
 
 // Send a command to a YouTube embed via its JS-API postMessage channel — no
