@@ -121,6 +121,13 @@ h1.title {
 }
 h1.title em { color: var(--accent); font-style: italic; font-weight: 400; }
 .sub { color: var(--muted); max-width: 62ch; margin: 0; }
+.hero-badges { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 14px; }
+.hero-badges span {
+  font-family: var(--font-eyebrow); font-size: 11px; letter-spacing: .06em; color: var(--ink-2);
+  background: var(--surface-2); border: 1px solid var(--line); border-radius: 999px; padding: 6px 12px;
+  display: inline-flex; align-items: center; gap: 6px;
+}
+.hero-badges span::before { content: ""; width: 5px; height: 5px; border-radius: 50%; background: var(--ok); }
 
 .edit-banner {
   display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
@@ -153,6 +160,69 @@ h1.title em { color: var(--accent); font-style: italic; font-weight: 400; }
   display: flex; align-items: center; gap: 10px;
 }
 .panel-title::after { content: ""; flex: 1; height: 1px; background: var(--line); }
+
+/* preset gallery */
+.presets { display: flex; gap: 10px; overflow-x: auto; padding: 2px 2px 8px; scroll-snap-type: x mandatory; }
+.presets::-webkit-scrollbar { height: 6px; }
+.presets::-webkit-scrollbar-thumb { background: var(--line-2); border-radius: 3px; }
+.preset {
+  flex: 0 0 auto; width: 96px; scroll-snap-align: start;
+  border: 1px solid var(--line); border-radius: 12px; overflow: hidden;
+  background: var(--surface-2); transition: transform .15s, border-color .15s, box-shadow .15s;
+}
+.preset:hover { transform: translateY(-2px); border-color: var(--line-2); }
+.preset.on { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in oklab, var(--accent) 14%, transparent); }
+.preset-swatch {
+  height: 66px; display: grid; place-items: center; position: relative;
+  background: radial-gradient(120% 90% at 50% 12%, color-mix(in oklab, var(--pacc) 42%, var(--pbg)), var(--pbg) 76%);
+}
+.preset-swatch i {
+  width: 9px; height: 9px; transform: rotate(45deg); background: var(--pacc);
+  box-shadow: 0 0 14px color-mix(in oklab, var(--pacc) 70%, transparent);
+}
+.preset-name {
+  display: block; text-align: center; font-size: 11.5px; padding: 7px 4px;
+  font-family: var(--font-display); color: var(--ink);
+}
+
+/* bulk names textarea + generic modal textarea */
+.modal textarea {
+  width: 100%; min-height: 130px; resize: vertical; background: var(--surface-2);
+  border: 1px solid var(--line); border-radius: 10px; padding: 10px 13px; color: var(--ink);
+  font-family: var(--font-display); font-size: 16px; line-height: 1.9; margin-top: 8px;
+}
+.modal textarea:focus { outline: none; border-color: var(--accent); background: var(--surface); }
+.modal .check { display: flex; align-items: center; gap: 8px; margin-top: 12px; font-size: 13px; color: var(--ink-2); }
+.modal .check input { width: 16px; height: 16px; accent-color: var(--accent); }
+
+/* onboarding banner */
+.intro {
+  margin-top: 20px; padding: 18px 20px; border-radius: 16px; position: relative;
+  background: linear-gradient(120deg, color-mix(in oklab, var(--accent) 12%, var(--surface)), var(--surface));
+  border: 1px solid color-mix(in oklab, var(--accent) 22%, transparent);
+}
+.intro h3 { font-family: var(--font-display); font-size: 20px; margin: 0 0 12px; }
+.intro-steps { display: flex; gap: 14px; flex-wrap: wrap; }
+.intro-step { display: flex; align-items: flex-start; gap: 10px; flex: 1 1 200px; }
+.intro-num {
+  width: 26px; height: 26px; border-radius: 50%; flex-shrink: 0; display: grid; place-items: center;
+  background: var(--accent); color: #fff; font-size: 13px; font-weight: 700; font-family: var(--font-eyebrow);
+}
+.intro-step b { display: block; font-size: 13.5px; }
+.intro-step span { font-size: 12px; color: var(--muted); }
+.intro-close {
+  position: absolute; top: 12px; inset-inline-end: 12px; width: 26px; height: 26px;
+  border-radius: 50%; color: var(--muted); border: 1px solid var(--line-2); display: grid; place-items: center;
+}
+.intro-close:hover { color: var(--ink); border-color: var(--ink); }
+
+/* button loading state + spinner */
+.btn[disabled] { opacity: .7; pointer-events: none; }
+.spin {
+  width: 14px; height: 14px; border: 2px solid currentColor; border-top-color: transparent;
+  border-radius: 50%; display: inline-block; animation: spin .7s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
 
 /* occasion grid */
 .occasions { display: grid; grid-template-columns: repeat(4, 1fr); gap: 7px; }
@@ -1327,6 +1397,21 @@ const STYLES = [
   { id:'wave',      name:'موجة'     },
 ];
 const styleOf = card => (card.styleId && STYLES.some(s => s.id === card.styleId)) ? card.styleId : 'classic';
+// Curated one-tap "looks" — a designer-picked palette + animation + reveal style
+// + font. Applying one sets those four fields and leaves the occasion, message
+// and names alone, so it works for any card.
+const PRESETS = [
+  { id:'royalnight', name:'ليلة ملكية',  paletteId:'midnight', animId:'stars',     styleId:'monogram',  fontId:'kufi'    },
+  { id:'roseblush',  name:'وردة',         paletteId:'rose',     animId:'petals',    styleId:'aurora',    fontId:'ruqaa'   },
+  { id:'goldfeast',  name:'احتفال ذهبي',  paletteId:'amber',    animId:'confetti',  styleId:'classic',   fontId:'naskh'   },
+  { id:'blackink',   name:'أناقة سوداء',  paletteId:'noir',     animId:'fireflies', styleId:'noir',      fontId:'messiri' },
+  { id:'greenpride', name:'فخر وطني',     paletteId:'national', animId:'confetti',  styleId:'stamp',     fontId:'kufi'    },
+  { id:'softdream',  name:'حلم هادئ',     paletteId:'mist',     animId:'clouds',    styleId:'minimal',   fontId:'messiri' },
+  { id:'garden',     name:'حديقة',        paletteId:'sage',     animId:'roses',     styleId:'wave',      fontId:'ruqaa'   },
+  { id:'winter',     name:'شتاء',         paletteId:'royal',    animId:'snow',      styleId:'editorial', fontId:'messiri' },
+];
+const presetMatches = (p, f) => p.paletteId === f.paletteId && p.animId === f.animId
+  && p.styleId === f.styleId && p.fontId === f.fontId;
 const OCCASIONS = [
   { id:'birthday',  label:'عيد ميلاد',  sub:'HBD',      glyph:'⚘', palette:'plum',     anim:'balloons', sound:'musicbox', eyebrow:'كل عام وأنت أسعد' },
   { id:'wedding',   label:'زواج مبارك', sub:'MABROUK',  glyph:'❦', palette:'wine',     anim:'petals',   sound:'harp',     eyebrow:'ألف مبروك' },
@@ -1367,6 +1452,9 @@ const saveCards = c => { try { localStorage.setItem(STORE, JSON.stringify(c)); }
 // It brands the PRINTED card and every export/preview here. It cannot ride in the
 // barcode (an image is far too big for a QR), so the scanned page shows the shop
 // name as text, which it already does.
+const introSeen = () => { try { return localStorage.getItem('baaqa.intro') === '1'; } catch { return true; } };
+const markIntro = () => { try { localStorage.setItem('baaqa.intro', '1'); } catch {} };
+
 const SHOP_STORE = 'baaqa.shop';
 const loadShop = () => { try { return JSON.parse(localStorage.getItem(SHOP_STORE) || '{}'); } catch { return {}; } };
 const saveShop = s => { try { localStorage.setItem(SHOP_STORE, JSON.stringify(s)); } catch {} };
@@ -1523,6 +1611,20 @@ function renderComposer() {
       <p class="sub">${state.customerMode
         ? 'اختر المناسبة والألوان والخط، واكتب رسالتك. في النهاية تحصل على رابط وباركود ترسله للمحل أو تطبعه بنفسك.'
         : 'اختر المناسبة، اضبط التصميم، واطبع الباركود على البطاقة. حين يمسحه العميل تنفتح صفحة مصمّمة بحركة حيّة.'}</p>
+      <div class="hero-badges">
+        <span>بدون تطبيق</span><span>يعمل بلا إنترنت</span><span>باركود يُقرأ فعلياً</span><span>عربي بالكامل</span>
+      </div>
+
+      ${(!state.customerMode && !state.editId && !introSeen()) ? `
+      <div class="intro" id="intro">
+        <button class="intro-close" id="introClose" aria-label="إغلاق">✕</button>
+        <h3>ابدأ في ٣ خطوات</h3>
+        <div class="intro-steps">
+          <div class="intro-step"><span class="intro-num">١</span><div><b>اختر مناسبة وتصميم</b><span>أو ابدأ بتصميم جاهز</span></div></div>
+          <div class="intro-step"><span class="intro-num">٢</span><div><b>اكتب رسالتك</b><span>وأضف صوتاً أو أغنية</span></div></div>
+          <div class="intro-step"><span class="intro-num">٣</span><div><b>ولّد الباركود</b><span>اطبعه أو شاركه كصورة</span></div></div>
+        </div>
+      </div>` : ''}
 
       ${state.editId ? `<div class="edit-banner">
         <span><b>تعديل كرت محفوظ</b> — عدّل ما تريد ثم احفظ. سيصدر <b>باركود جديد</b> يحمل التعديل (الباركود القديم المطبوع يبقى يفتح النسخة السابقة).</span>
@@ -1530,6 +1632,17 @@ function renderComposer() {
 
       <section class="composer">
         <div>
+          <div class="panel">
+            <div class="panel-title">تصاميم جاهزة</div>
+            <div class="presets" id="presetRow">
+              ${PRESETS.map(p => { const pal = PALETTES.find(x => x.id === p.paletteId) || PALETTES[0];
+                return `<button class="preset ${presetMatches(p, f) ? 'on' : ''}" data-preset="${p.id}" style="--pbg:${pal.bg};--pacc:${pal.accent}">
+                  <span class="preset-swatch"><i></i></span>
+                  <span class="preset-name">${p.name}</span>
+                </button>`; }).join('')}
+            </div>
+          </div>
+
           <div class="panel">
             <div class="panel-title">المناسبة</div>
             <div class="occasions" id="occGrid">
@@ -1636,6 +1749,7 @@ function renderComposer() {
                 <button class="btn btn-secondary" id="btnReplay">إعادة الحركة</button>
                 <button class="btn btn-primary" id="btnMake">${state.editId ? 'حفظ التعديلات' : 'توليد الباركود'}</button>
               </div>
+              ${!state.customerMode ? `<button class="btn btn-secondary" id="btnBulk" style="width:100%;margin-top:9px">إنشاء بالجملة · قائمة أسماء</button>` : ''}
             </div>
           </div>
         </div>
@@ -1674,6 +1788,12 @@ function renderComposer() {
   if (saved) saved.onclick = () => document.getElementById('gallery').scrollIntoView({behavior:'smooth'});
   const brandBtn = document.getElementById('brandBtn');
   if (brandBtn) brandBtn.onclick = openShopModal;
+  const presetRow = document.getElementById('presetRow');
+  if (presetRow) presetRow.onclick = e => { const b = e.target.closest('[data-preset]'); if (b) applyPreset(b.dataset.preset); };
+  const introClose = document.getElementById('introClose');
+  if (introClose) introClose.onclick = () => { markIntro(); const el = document.getElementById('intro'); if (el) el.remove(); };
+  const btnBulk = document.getElementById('btnBulk');
+  if (btnBulk) btnBulk.onclick = openBulkModal;
 
   document.getElementById('occGrid').onclick = e => {
     const b = e.target.closest('[data-occ]'); if (!b) return;
@@ -1851,6 +1971,8 @@ function editCard(id) {
 async function makeCard() {
   const f = state.form;
   if (!f.message.trim()) { toast('اكتب رسالتك أولًا'); return; }
+  const btn = document.getElementById('btnMake');
+  if (btn) { btn.disabled = true; btn.innerHTML = '<span class="spin"></span> جاري التوليد…'; }
   const editing = state.editId ? loadCards().find(c => c.id === state.editId) : null;
   const card = {
     id: editing ? editing.id : 'c_' + Math.random().toString(36).slice(2, 10),
@@ -1873,6 +1995,8 @@ async function makeCard() {
     toast(editing ? 'حُفظت التعديلات' : 'أُنشئ الكرت');
   }
   await showResult(card);
+  const b2 = document.getElementById('btnMake');
+  if (b2) { b2.disabled = false; b2.textContent = state.editId ? 'حفظ التعديلات' : 'توليد الباركود'; }
   document.getElementById('result').scrollIntoView({ behavior:'smooth', block:'start' });
 }
 
@@ -1897,6 +2021,7 @@ async function showResult(card) {
         ${r.word} · ${size}×${size} · لا تطبعه بعرض أقل من ${mm} مم</div>
       <div class="row" style="margin-top:14px">
         <button class="btn btn-secondary" id="waBtn">واتساب</button>
+        <button class="btn btn-secondary" id="imgBtn">صورة</button>
         <button class="btn btn-secondary" id="shareBtn">مشاركة</button>
       </div>
       <div class="row" style="margin-top:9px">
@@ -1908,6 +2033,7 @@ async function showResult(card) {
   const shareText = 'كرت باقة خاص لك، افتحه من هنا:\n' + url;
   document.getElementById('waBtn').onclick = () =>
     window.open('https://wa.me/?text=' + encodeURIComponent(shareText), '_blank');
+  document.getElementById('imgBtn').onclick = () => shareCardImage(card, url);
   document.getElementById('shareBtn').onclick = async () => {
     if (navigator.share) { try { await navigator.share({ title: 'كرت باقة', text: 'كرت خاص لك', url }); } catch (e) {} }
     else { try { await navigator.clipboard.writeText(url); toast('نُسخ الرابط'); } catch { toast('انسخ الرابط من الحقل'); } }
@@ -2035,6 +2161,63 @@ function openShopModal() {
   };
 }
 
+// Apply a curated look — sets the four design fields, keeps everything else.
+function applyPreset(id) {
+  const p = PRESETS.find(x => x.id === id); if (!p) return;
+  const f = state.form;
+  f.paletteId = p.paletteId; f.animId = p.animId; f.styleId = p.styleId; f.fontId = p.fontId;
+  renderComposer();
+  toast('طُبّق تصميم «' + p.name + '»');
+}
+
+// Bulk: one card per name, all sharing the current occasion/message/design,
+// straight onto an A4 sheet (optionally saved too).
+function openBulkModal() {
+  const f = state.form;
+  const bd = document.createElement('div');
+  bd.className = 'modal-bd';
+  bd.innerHTML = `
+    <div class="modal" role="dialog" aria-modal="true">
+      <h3>إنشاء بالجملة</h3>
+      <p class="msub">يصنع كرتاً لكل اسم بنفس المناسبة والرسالة والتصميم الحالي. اكتب اسماً في كل سطر.</p>
+      <textarea id="bulkNames" dir="rtl" placeholder="نورة&#10;فهد&#10;ريم"></textarea>
+      <label class="check"><input type="checkbox" id="bulkSave"> احفظ الكروت في «المحفوظة» أيضاً</label>
+      <div class="msub" id="bulkCount" style="margin-top:10px">٠ اسم</div>
+      <div class="modal-acts">
+        <button class="btn btn-secondary" id="bulkCancel">إلغاء</button>
+        <button class="btn btn-primary" id="bulkGo" style="flex:1">توليد الورقة</button>
+      </div>
+    </div>`;
+  document.body.appendChild(bd);
+  const close = () => bd.remove();
+  bd.addEventListener('click', e => { if (e.target === bd) close(); });
+  bd.querySelector('#bulkCancel').onclick = close;
+  const ta = bd.querySelector('#bulkNames'), cnt = bd.querySelector('#bulkCount');
+  const names = () => ta.value.split('\n').map(s => s.trim()).filter(Boolean);
+  const arabicNum = n => String(n).replace(/\d/g, d => '٠١٢٣٤٥٦٧٨٩'[+d]);
+  ta.addEventListener('input', () => { cnt.textContent = arabicNum(names().length) + ' اسم'; });
+  bd.querySelector('#bulkGo').onclick = async () => {
+    if (!f.message.trim()) { toast('اكتب الرسالة أولاً في المصمّم'); return; }
+    const list = names();
+    if (!list.length) { toast('اكتب اسماً واحداً على الأقل'); return; }
+    const go = bd.querySelector('#bulkGo');
+    go.disabled = true; go.innerHTML = '<span class="spin"></span> جاري التوليد…';
+    const cards = [];
+    for (const nm of list) {
+      const card = { id: 'c_' + Math.random().toString(36).slice(2, 10), createdAt: Date.now(),
+        occasionId: f.occasionId, to: nm, from: f.from.trim(), shop: f.shop.trim() || 'باقة',
+        message: f.message.trim(), paletteId: f.paletteId, animId: f.animId, fontId: f.fontId,
+        soundId: f.soundId, styleId: f.styleId, ytId: f.ytId, ytStart: f.ytStart,
+        openMode: f.openMode, openAt: f.openAt };
+      card.url = await CODEC.encodeCard(card);
+      cards.push(card);
+    }
+    if (bd.querySelector('#bulkSave').checked) { const all = loadCards(); cards.forEach(c => all.unshift(c)); saveCards(all); }
+    SHEET_BASE = cards; SHEET_COPIES = 1; SHEET_COLS = 2;
+    close(); location.hash = 'sheet';
+  };
+}
+
 /* =====================================================================
    Print templates.
    Rules that keep them scannable: nothing is ever drawn over the symbol,
@@ -2147,6 +2330,62 @@ function tplCell(card, url, brand) {
     <text x="${w/2}" y="${y+px+40}" text-anchor="middle" font-size="15" fill="#4A362E" direction="rtl">امسح لفتح الرسالة</text>
     ${card.to ? `<text x="${w/2}" y="${y+px+66}" text-anchor="middle" font-family="Reem Kufi, sans-serif" font-size="10" letter-spacing="2" fill="#8B7168" direction="rtl">إلى · ${esc(card.to)}</text>` : ''}
   </svg>`;
+}
+
+// Greedy word-wrap for SVG text (no auto-wrap in SVG).
+function wrapText(str, max) {
+  const words = String(str || '').split(/\s+/).filter(Boolean);
+  const lines = []; let cur = '';
+  for (const w of words) {
+    if ((cur + ' ' + w).trim().length > max && cur) { lines.push(cur); cur = w; }
+    else cur = (cur ? cur + ' ' : '') + w;
+  }
+  if (cur) lines.push(cur);
+  return lines;
+}
+
+// A portrait share image (4:5) in the card's own palette — for WhatsApp /
+// Instagram. Carries the QR so it is scannable straight from the image.
+function tplPoster(card, url, brand) {
+  const W = 1080, H = 1350, o = occOf(card.occasionId);
+  const pal = paletteOf(card), b = brand || brandOf(card);
+  const acc = pal.accent, ink = pal.ink, bg = pal.bg;
+  const lines = wrapText(card.message, 34).slice(0, 6);
+  const msgTop = 560, lh = 64;
+  const msg = lines.map((ln, i) => `<text x="${W/2}" y="${msgTop + i*lh}" text-anchor="middle" font-size="44" fill="${ink}" direction="rtl">${esc(ln)}</text>`).join('');
+  const qp = 240, qx = W - 290, qy = H - 300, s = symbol(url, qx, qy, qp);
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" font-family="Amiri, 'Times New Roman', serif" shape-rendering="geometricPrecision">
+    <defs><radialGradient id="pg" cx="50%" cy="22%" r="75%">
+      <stop offset="0%" stop-color="${acc}" stop-opacity="0.34"/>
+      <stop offset="72%" stop-color="${bg}" stop-opacity="0"/>
+    </radialGradient></defs>
+    <rect width="${W}" height="${H}" fill="${bg}"/>
+    <rect width="${W}" height="${H}" fill="url(#pg)"/>
+    <rect x="34" y="34" width="${W-68}" height="${H-68}" fill="none" stroke="${acc}" stroke-opacity="0.5" stroke-width="2"/>
+    <text x="${W/2}" y="150" text-anchor="middle" font-family="Reem Kufi, sans-serif" font-size="26" letter-spacing="10" fill="${acc}">${esc(o.sub)}</text>
+    <text x="${W/2}" y="256" text-anchor="middle" font-size="92" font-style="italic" fill="${ink}" direction="rtl">${esc(o.label)}</text>
+    <rect x="${W/2-11}" y="300" width="22" height="22" fill="${acc}" transform="rotate(45 ${W/2} 311)"/>
+    ${card.to ? `<text x="${W/2}" y="440" text-anchor="middle" font-size="72" fill="${ink}" direction="rtl">${esc(card.to)}</text>` : ''}
+    ${msg}
+    <text x="${W/2}" y="${H-190}" text-anchor="middle" font-size="46" font-style="italic" fill="${acc}" direction="rtl">${esc(card.shop || b.name)}</text>
+    <rect x="${qx-16}" y="${qy-16}" width="${qp+32}" height="${qp+32}" rx="14" fill="#ffffff"/>
+    ${s.svg}
+    <text x="72" y="${H-150}" font-family="Reem Kufi, sans-serif" font-size="30" fill="${ink}" fill-opacity="0.72" direction="rtl">امسح الرمز</text>
+    <text x="72" y="${H-108}" font-family="Reem Kufi, sans-serif" font-size="30" fill="${ink}" fill-opacity="0.72" direction="rtl">لفتح الكرت</text>
+  </svg>`;
+}
+
+// Build the poster as a PNG and hand it to the OS share sheet (with the link),
+// falling back to a download where file-sharing is unsupported.
+async function shareCardImage(card, url) {
+  toast('نجهّز الصورة…');
+  try {
+    const blob = await svgToPng(tplPoster(card, url), 1080);
+    const file = new File([blob], 'baaqa-card.png', { type: 'image/png' });
+    const text = 'كرت باقة خاص لك: ' + url;
+    if (navigator.canShare && navigator.canShare({ files: [file] })) { await navigator.share({ files: [file], text }); return; }
+    await download('baaqa-card.png', blob);
+  } catch (e) { toast('تعذّر توليد الصورة'); }
 }
 
 const TEMPLATES = [
