@@ -197,6 +197,8 @@ label.lbl {
   box-shadow: inset 0 0 0 1px rgba(255,255,255,.35);
 }
 .opt-note { font-size: 11px; color: var(--muted); margin-top: 8px; }
+.yt-prev { margin-top: 10px; border-radius: 10px; overflow: hidden; border: 1px solid var(--line); aspect-ratio: 16 / 9; }
+.yt-prev iframe { display: block; width: 100%; height: 100%; border: 0; }
 
 /* preview */
 .sticky { position: sticky; top: 88px; }
@@ -531,6 +533,24 @@ label.lbl {
   backdrop-filter: blur(8px);
 }
 .rec-back:hover { background: rgba(0,0,0,.55); color: #fff; }
+/* The YouTube audio player: kept in the DOM and rendered (so it keeps playing)
+   but visually hidden — the song is what matters, not the video. */
+.yt-embed {
+  position: fixed; inset-inline-start: 10px; bottom: 10px;
+  width: 180px; height: 101px; opacity: 0; pointer-events: none;
+  z-index: 1; overflow: hidden; border: 0;
+}
+.yt-embed iframe { width: 100%; height: 100%; border: 0; }
+.rec-music {
+  position: fixed; bottom: 16px; inset-inline-start: 16px; z-index: 7;
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 9px 14px; border-radius: 999px; font-size: 12px;
+  background: rgba(0,0,0,.4); color: rgba(255,255,255,.85);
+  backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+  font-family: var(--font-eyebrow); letter-spacing: .04em;
+}
+.rec-music:hover { background: rgba(0,0,0,.6); color: #fff; }
+.rec-music svg { flex-shrink: 0; }
 .rec-vignette {
   position: absolute; inset: 0; pointer-events: none; z-index: 4;
   background: radial-gradient(ellipse at 50% 50%, transparent 42%, rgba(0,0,0,.34) 92%);
@@ -1071,35 +1091,46 @@ const CODEC = (() => {
 
   // Header, then 2-byte-length-prefixed utf8 fields. Format 1 is
   // [1][occ][palette][anim][font]; format 2 appends a sound byte; format 3
-  // appends a style byte (255 = default/classic, else an index into STYLES).
-  // Older links keep decoding — missing fields fall back to their defaults.
+  // appends a style byte; format 4 appends a 2-byte YouTube start-seconds and a
+  // 5th field, the 11-char YouTube id. A card with no song stays format 3, so the
+  // common case keeps the smaller symbol. Older links keep decoding — missing
+  // fields fall back to their defaults.
   function pack(card) {
-    const fields = [card.to, card.from, card.shop, card.message].map(v => enc.encode(v || ''));
-    const out = new Uint8Array(7 + fields.reduce((n,f) => n + 2 + f.length, 0));
+    const yt = card.ytId && /^[\w-]{11}$/.test(card.ytId) ? card.ytId : '';
+    const fmt = yt ? 4 : 3;
+    const vals = [card.to, card.from, card.shop, card.message];
+    if (fmt >= 4) vals.push(yt);
+    const fields = vals.map(v => enc.encode(v || ''));
+    const head = fmt >= 4 ? 9 : 7;
+    const out = new Uint8Array(head + fields.reduce((n,f) => n + 2 + f.length, 0));
     let o = 0;
-    out[o++] = 3;
+    out[o++] = fmt;
     out[o++] = Math.max(0, OCCASIONS.findIndex(x => x.id === card.occasionId));
     out[o++] = card.paletteId ? Math.max(0, PALETTES.findIndex(x => x.id === card.paletteId)) : 255;
     out[o++] = card.animId    ? Math.max(0, ANIMATIONS.findIndex(x => x.id === card.animId))  : 255;
     out[o++] = card.fontId    ? Math.max(0, FONTS.findIndex(x => x.id === card.fontId))       : 255;
     out[o++] = card.soundId === 'off' ? 254 : card.soundId ? Math.max(0, SOUNDS.findIndex(x => x.id === card.soundId)) : 255;
     out[o++] = card.styleId   ? Math.max(0, STYLES.findIndex(x => x.id === card.styleId))     : 255;
+    if (fmt >= 4) { const st = Math.max(0, Math.min(65535, card.ytStart | 0)); out[o++] = st >> 8; out[o++] = st & 255; }
     for (const f of fields) { out[o++] = f.length >> 8; out[o++] = f.length & 255; out.set(f, o); o += f.length; }
     return out;
   }
   function unpack(bytes) {
     let o = 0;
     const fmt = bytes[o++];
-    if (fmt < 1 || fmt > 3) return null;
+    if (fmt < 1 || fmt > 4) return null;
     const occ = OCCASIONS[bytes[o++]] || OCCASIONS[0];
     const pi = bytes[o++], ai = bytes[o++], fi = bytes[o++];
-    let sid = null, tid = null;
+    let sid = null, tid = null, yts = 0;
     if (fmt >= 2) { const s = bytes[o++]; sid = s === 255 ? null : s === 254 ? 'off' : (SOUNDS[s] || {}).id || null; }
     if (fmt >= 3) { const t = bytes[o++]; tid = t === 255 ? null : (STYLES[t] || {}).id || null; }
+    if (fmt >= 4) { yts = (bytes[o++] << 8) | bytes[o++]; }
     const read = () => {
       const len = (bytes[o++] << 8) | bytes[o++];
       const s = dec.decode(bytes.subarray(o, o + len)); o += len; return s;
     };
+    const to = read(), from = read(), shop = read(), message = read();
+    const yt = fmt >= 4 ? (read() || null) : null;
     return {
       occasionId: occ.id,
       paletteId: pi === 255 ? null : (PALETTES[pi] || {}).id || null,
@@ -1107,12 +1138,15 @@ const CODEC = (() => {
       fontId:    fi === 255 ? null : (FONTS[fi] || {}).id || null,
       soundId:   sid,
       styleId:   tid,
-      to: read(), from: read(), shop: read(), message: read(),
+      ytId:      yt,
+      ytStart:   yts,
+      to, from, shop, message,
     };
   }
 
   const legacyJson = card => ({ o: card.occasionId, t: card.to, m: card.message,
-    f: card.from, s: card.shop, p: card.paletteId, a: card.animId, ft: card.fontId, sd: card.soundId, st: card.styleId });
+    f: card.from, s: card.shop, p: card.paletteId, a: card.animId, ft: card.fontId,
+    sd: card.soundId, st: card.styleId, yt: card.ytId, yts: card.ytStart });
 
   // The payload lives in the QUERY STRING, not the fragment. Plenty of scanner
   // apps and messengers cut a URL at '#' or drop what follows it, which opened
@@ -1127,7 +1161,7 @@ const CODEC = (() => {
 
   const fromLegacyJson = j => ({ occasionId: j.o, to: j.t, message: j.m, from: j.f,
     shop: j.s, paletteId: j.p || null, animId: j.a || null, fontId: j.ft || null,
-    soundId: j.sd || null, styleId: j.st || null });
+    soundId: j.sd || null, styleId: j.st || null, ytId: j.yt || null, ytStart: j.yts || 0 });
 
   // Reads whichever form the link arrived in: the query parameters used now,
   // and the '#d/' and '#c/' fragments used by cards already printed.
@@ -1283,10 +1317,39 @@ function toast(msg) {
 // including the 4-module quiet zone on each side.
 const printMm = modules => Math.ceil((modules + 8) * 0.5 / 5) * 5;
 
+// Pull an 11-char video id (and optional start time) out of any YouTube link
+// form, or a bare id. Returns { id, start } or null.
+function parseYtTime(t) {
+  if (!t) return 0;
+  if (/^\d+$/.test(t)) return +t;
+  let s = 0, m;
+  if ((m = t.match(/(\d+)h/))) s += +m[1] * 3600;
+  if ((m = t.match(/(\d+)m/))) s += +m[1] * 60;
+  if ((m = t.match(/(\d+)s/))) s += +m[1];
+  if (!s && t.includes(':')) s = t.split(':').map(Number).reduce((a, b) => a * 60 + b, 0);
+  return s || 0;
+}
+function parseYouTube(input) {
+  if (!input) return null;
+  input = input.trim();
+  let id = null, start = 0;
+  try {
+    const u = new URL(input);
+    if (/youtu\.be$/.test(u.hostname)) id = u.pathname.slice(1, 12);
+    else if (u.searchParams.get('v')) id = u.searchParams.get('v');
+    else { const m = u.pathname.match(/\/(embed|shorts|live|v)\/([\w-]{11})/); if (m) id = m[2]; }
+    start = parseYtTime(u.searchParams.get('t') || u.searchParams.get('start') || '');
+  } catch (e) {}
+  if (!id && /^[\w-]{11}$/.test(input)) id = input;
+  if (id) id = id.slice(0, 11);
+  return (id && /^[\w-]{11}$/.test(id)) ? { id, start } : null;
+}
+
 const state = {
   customerMode: false,
   form: { occasionId:'birthday', to:'', from:'', shop:'زهور المدينة', message:'',
-          paletteId:null, animId:null, fontId:'naskh', soundId:null, styleId:null },
+          paletteId:null, animId:null, fontId:'naskh', soundId:null, styleId:null,
+          ytId:null, ytStart:0 },
 };
 
 // Play one short synthesised phrase. Called on the envelope's open gesture, so
@@ -1443,7 +1506,13 @@ function renderComposer() {
                 <button class="chip" id="soundTest" type="button" title="استمع">استمع ▶</button>
               </div>
             </div>
-            <div class="opt-note">«تلقائي» يتبع المناسبة المختارة. أي خيار تحدده يتجاوزها.</div>
+            <div class="field">
+              <label class="lbl" for="fYt">أغنية من يوتيوب <span style="color:var(--muted)">· تعزف عند فتح الكرت</span></label>
+              <input id="fYt" type="text" dir="ltr" placeholder="ألصق رابط يوتيوب هنا"
+                value="${f.ytId ? ('https://youtu.be/' + f.ytId) : ''}">
+              <div id="ytStatus" class="opt-note"></div>
+            </div>
+            <div class="opt-note">«تلقائي» يتبع المناسبة المختارة. أي خيار تحدده يتجاوزها. إن أضفت أغنية يوتيوب فهي تحلّ محل الصوت المصمّم.</div>
           </div>
         </div>
 
@@ -1537,6 +1606,16 @@ function renderComposer() {
   };
   ['fTo','fFrom','fShop','fMsg'].forEach(id => el(id).addEventListener('input', onInput));
 
+  const fYt = el('fYt');
+  if (fYt) fYt.addEventListener('input', () => {
+    const p = parseYouTube(fYt.value);
+    f.ytId = p ? p.id : null;
+    f.ytStart = p ? p.start : 0;
+    renderYtStatus();
+    updateDensityHint();
+  });
+  renderYtStatus();
+
   el('btnMake').onclick = makeCard;
   el('btnReplay').onclick = () => refreshPreview();
 
@@ -1565,6 +1644,25 @@ function readability(modules) {
   if (modules <= 81) return { cls:'', word:'جيد' };
   return { cls:'mid', word:'كثيف — اختصر الرسالة أو اطبعه أكبر' };
 }
+// Shows whether the pasted link resolved to a playable song, with a small
+// click-to-play preview so the shop can confirm the right track before printing.
+function renderYtStatus() {
+  const el = document.getElementById('ytStatus');
+  if (!el) return;
+  const id = state.form.ytId;
+  if (!id) { el.textContent = 'اختياري — يعمل عند وجود إنترنت وقت المسح.'; el.style.color = ''; return; }
+  el.style.color = '';
+  el.innerHTML = `<span style="color:var(--ok);font-weight:500">الأغنية جاهزة</span> · تعزف عند فتح الكرت وتحتاج إنترنت
+    <button id="ytClear" style="color:var(--accent);margin-inline-start:8px">إزالة</button>
+    <div class="yt-prev"><iframe src="https://www.youtube-nocookie.com/embed/${id}?rel=0" title="معاينة الأغنية"
+      allow="encrypted-media" allowfullscreen loading="lazy"></iframe></div>`;
+  el.querySelector('#ytClear').onclick = () => {
+    state.form.ytId = null; state.form.ytStart = 0;
+    const f = document.getElementById('fYt'); if (f) f.value = '';
+    renderYtStatus(); updateDensityHint();
+  };
+}
+
 async function updateDensityHint() {
   const h = document.getElementById('densityHint');
   if (!h) return;
@@ -1600,6 +1698,7 @@ async function makeCard() {
     shop: f.shop.trim() || 'باقة',
     message: f.message.trim(),
     paletteId: f.paletteId, animId: f.animId, fontId: f.fontId, soundId: f.soundId, styleId: f.styleId,
+    ytId: f.ytId, ytStart: f.ytStart,
   };
   card.url = await CODEC.encodeCard(card);
   if (!state.customerMode) {
@@ -2128,13 +2227,48 @@ function renderRecipient(card) {
   wrap.querySelector('#recBack').onclick = () => { location.href = HOME(); };
   wireRecipient(wrap, animOf(card), p.accent, false);
 
-  // The tap that opens the envelope is the gesture that lets audio play.
+  // The tap that opens the envelope is the gesture that lets audio play. A
+  // YouTube song, when set, plays instead of the synthesised sound.
   const env = wrap.querySelector('#env');
   const sid = soundOf(card);
   let played = false;
-  const play = () => { if (played) return; played = true; playCardSound(sid); };
+  const play = () => {
+    if (played) return; played = true;
+    if (card.ytId) startYouTube(wrap, card.ytId, card.ytStart || 0);
+    else playCardSound(sid);
+  };
   env.addEventListener('click', play);
   env.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') play(); });
+}
+
+// Send a command to a YouTube embed via its JS-API postMessage channel — no
+// external script needed, only `enablejsapi=1` on the embed URL.
+function ytCmd(iframe, func) {
+  try { iframe.contentWindow.postMessage(JSON.stringify({ event: 'command', func, args: [] }), '*'); } catch (e) {}
+}
+// Start the song. The iframe is created inside the open gesture, so autoplay
+// with sound is allowed. It is kept off-screen (audio only); a small pill lets
+// the recipient pause or resume.
+function startYouTube(root, id, start) {
+  root.querySelectorAll('.yt-embed, .rec-music').forEach(n => n.remove());
+  const holder = document.createElement('div');
+  holder.className = 'yt-embed';
+  const src = 'https://www.youtube-nocookie.com/embed/' + id
+    + '?autoplay=1&playsinline=1&rel=0&modestbranding=1&enablejsapi=1' + (start ? ('&start=' + start) : '');
+  holder.innerHTML = '<iframe src="' + src + '" title="أغنية الكرت" '
+    + 'allow="autoplay; encrypted-media" allowfullscreen></iframe>';
+  root.appendChild(holder);
+  const iframe = holder.querySelector('iframe');
+
+  const bars = '<svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16" rx="1"/><rect x="14" y="4" width="4" height="16" rx="1"/></svg>';
+  const tri = '<svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>';
+  const ctrl = document.createElement('button');
+  ctrl.className = 'rec-music';
+  let playing = true;
+  const label = () => { ctrl.innerHTML = (playing ? bars : tri) + '<span>' + (playing ? 'إيقاف الأغنية' : 'تشغيل الأغنية') + '</span>'; };
+  label();
+  ctrl.onclick = () => { playing = !playing; ytCmd(iframe, playing ? 'playVideo' : 'pauseVideo'); label(); };
+  root.appendChild(ctrl);
 }
 
 // Shared by the live page and the preview iframe, so it is serialised by name.
