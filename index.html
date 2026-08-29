@@ -122,6 +122,20 @@ h1.title {
 h1.title em { color: var(--accent); font-style: italic; font-weight: 400; }
 .sub { color: var(--muted); max-width: 62ch; margin: 0; }
 
+.edit-banner {
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  margin-top: 18px; padding: 11px 16px; border-radius: 12px;
+  background: color-mix(in oklab, var(--accent) 8%, var(--surface));
+  border: 1px solid color-mix(in oklab, var(--accent) 24%, transparent);
+  font-size: 13px; color: var(--ink-2);
+}
+.edit-banner b { font-family: var(--font-display); color: var(--accent); font-weight: 700; }
+.edit-banner button {
+  margin-inline-start: auto; padding: 7px 14px; border-radius: 999px;
+  background: var(--surface-2); border: 1px solid var(--line-2); color: var(--ink); font-size: 12.5px;
+}
+.edit-banner button:hover { border-color: var(--ink); }
+
 .composer {
   display: grid; grid-template-columns: 1.08fr 0.92fr;
   gap: 24px; margin-top: 26px; align-items: start;
@@ -1345,8 +1359,11 @@ function parseYouTube(input) {
   return (id && /^[\w-]{11}$/.test(id)) ? { id, start } : null;
 }
 
+const freshForm = () => ({ occasionId:'birthday', to:'', from:'', shop:'', message:'',
+  paletteId:null, animId:null, fontId:'naskh', soundId:null, styleId:null, ytId:null, ytStart:0 });
 const state = {
   customerMode: false,
+  editId: null,   // when set, makeCard updates this saved card instead of adding one
   form: { occasionId:'birthday', to:'', from:'', shop:'زهور المدينة', message:'',
           paletteId:null, animId:null, fontId:'naskh', soundId:null, styleId:null,
           ytId:null, ytStart:0 },
@@ -1436,6 +1453,10 @@ function renderComposer() {
         ? 'اختر المناسبة والألوان والخط، واكتب رسالتك. في النهاية تحصل على رابط وباركود ترسله للمحل أو تطبعه بنفسك.'
         : 'اختر المناسبة، اضبط التصميم، واطبع الباركود على البطاقة. حين يمسحه العميل تنفتح صفحة مصمّمة بحركة حيّة.'}</p>
 
+      ${state.editId ? `<div class="edit-banner">
+        <span><b>تعديل كرت محفوظ</b> — عدّل ما تريد ثم احفظ. سيصدر <b>باركود جديد</b> يحمل التعديل (الباركود القديم المطبوع يبقى يفتح النسخة السابقة).</span>
+        <button id="cancelEdit">إلغاء · كرت جديد</button></div>` : ''}
+
       <section class="composer">
         <div>
           <div class="panel">
@@ -1523,7 +1544,7 @@ function renderComposer() {
               <div class="phone"><iframe id="pvFrame" title="معاينة الكرت"></iframe></div>
               <div class="row" style="margin-top:13px">
                 <button class="btn btn-secondary" id="btnReplay">إعادة الحركة</button>
-                <button class="btn btn-primary" id="btnMake">توليد الباركود</button>
+                <button class="btn btn-primary" id="btnMake">${state.editId ? 'حفظ التعديلات' : 'توليد الباركود'}</button>
               </div>
             </div>
           </div>
@@ -1548,6 +1569,7 @@ function renderComposer() {
                   <div class="gcard-meta">
                     <span>${new Date(c.createdAt).toLocaleDateString('ar', {day:'numeric', month:'short'})}</span>
                     <span>
+                      <button data-edit="${c.id}">تعديل</button>
                       <button data-open="${c.id}">الباركود</button>
                       <button data-del="${c.id}">حذف</button>
                     </span>
@@ -1619,10 +1641,20 @@ function renderComposer() {
   el('btnMake').onclick = makeCard;
   el('btnReplay').onclick = () => refreshPreview();
 
+  const cancel = document.getElementById('cancelEdit');
+  if (cancel) cancel.onclick = () => { state.editId = null; state.form = freshForm(); renderComposer(); };
+
   const gc = el('gcards');
   if (gc) gc.onclick = async e => {
+    const ed = e.target.closest('[data-edit]');
+    if (ed) { editCard(ed.dataset.edit); return; }
     const d = e.target.closest('[data-del]');
-    if (d) { saveCards(loadCards().filter(c => c.id !== d.dataset.del)); renderComposer(); toast('حُذف الكرت'); return; }
+    if (d) {
+      const wasEditing = state.editId === d.dataset.del;
+      saveCards(loadCards().filter(c => c.id !== d.dataset.del));
+      if (wasEditing) { state.editId = null; state.form = freshForm(); }
+      renderComposer(); toast('حُذف الكرت'); return;
+    }
     const o = e.target.closest('[data-open]');
     if (o) { const c = loadCards().find(x => x.id === o.dataset.open); if (c) await showResult(c); }
   };
@@ -1687,12 +1719,30 @@ function refreshPreview() {
   }, true);
 }
 
+// Load a saved card back into the composer for editing. Regenerating then
+// updates that same record in place (keeps its id and original date).
+function editCard(id) {
+  const c = loadCards().find(x => x.id === id);
+  if (!c) return;
+  state.editId = id;
+  state.form = {
+    occasionId: c.occasionId, to: c.to || '', from: c.from || '', shop: c.shop || '',
+    message: c.message || '', paletteId: c.paletteId || null, animId: c.animId || null,
+    fontId: c.fontId || 'naskh', soundId: c.soundId || null, styleId: c.styleId || null,
+    ytId: c.ytId || null, ytStart: c.ytStart || 0,
+  };
+  renderComposer();
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+  toast('حمّلنا الكرت للتعديل');
+}
+
 async function makeCard() {
   const f = state.form;
   if (!f.message.trim()) { toast('اكتب رسالتك أولًا'); return; }
+  const editing = state.editId ? loadCards().find(c => c.id === state.editId) : null;
   const card = {
-    id: 'c_' + Math.random().toString(36).slice(2, 10),
-    createdAt: Date.now(),
+    id: editing ? editing.id : 'c_' + Math.random().toString(36).slice(2, 10),
+    createdAt: editing ? editing.createdAt : Date.now(),
     occasionId: f.occasionId,
     to: f.to.trim(), from: f.from.trim(),
     shop: f.shop.trim() || 'باقة',
@@ -1700,10 +1750,15 @@ async function makeCard() {
     paletteId: f.paletteId, animId: f.animId, fontId: f.fontId, soundId: f.soundId, styleId: f.styleId,
     ytId: f.ytId, ytStart: f.ytStart,
   };
+  if (editing) card.updatedAt = Date.now();
   card.url = await CODEC.encodeCard(card);
   if (!state.customerMode) {
-    const list = loadCards(); list.unshift(card); saveCards(list);
+    let list = loadCards();
+    list = editing ? list.map(c => c.id === card.id ? card : c) : (list.unshift(card), list);
+    saveCards(list);
+    state.editId = null;
     renderComposer();
+    toast(editing ? 'حُفظت التعديلات' : 'أُنشئ الكرت');
   }
   await showResult(card);
   document.getElementById('result').scrollIntoView({ behavior:'smooth', block:'start' });
